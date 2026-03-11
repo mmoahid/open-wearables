@@ -21,3 +21,19 @@ class SDKAuthContext(BaseModel):
     user_id: UUID | None = None  # From SDK token (sub claim)
     app_id: str | None = None  # From SDK token
     api_key_id: str | None = None  # From API key
+
+
+class AuthContext(BaseModel):
+    """Unified authentication context for data-access endpoints.
+
+    Supports three auth types:
+    - developer: Full access via developer JWT token
+    - sdk_token: Scoped access via SDK user token (bound to user_id)
+    - api_key: Full access via API key header
+    """
+
+    auth_type: Literal["developer", "sdk_token", "api_key"]
+    developer_id: UUID | None = None  # From developer JWT
+    user_id: UUID | None = None  # From SDK token (sub claim)
+    app_id: str | None = None  # From SDK token
+    api_key_id: str | None = None  # From API key

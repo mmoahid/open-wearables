@@ -11,7 +11,7 @@ from app.schemas.summaries import (
     RecoverySummary,
     SleepSummary,
 )
-from app.services import ApiKeyDep
+from app.services import UnifiedAuthDep, enforce_user_access
 from app.services.summaries_service import summaries_service
 from app.utils.dates import parse_query_datetime
 
@@ -24,7 +24,7 @@ async def get_activity_summary(
     start_date: str,
     end_date: str,
     db: DbSession,
-    _api_key: ApiKeyDep,
+    auth: UnifiedAuthDep,
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=400)] = 50,
     sort_order: Annotated[str, Query(pattern="^(asc|desc)$")] = "asc",
@@ -33,6 +33,7 @@ async def get_activity_summary(
 
     Aggregates time-series data (steps, energy, heart rate, etc.) by day.
     """
+    enforce_user_access(auth, user_id)
     start_datetime = parse_query_datetime(start_date)
     end_datetime = parse_query_datetime(end_date)
     return await summaries_service.get_activity_summaries(
@@ -46,11 +47,12 @@ async def get_sleep_summary(
     start_date: str,
     end_date: str,
     db: DbSession,
-    _api_key: ApiKeyDep,
+    auth: UnifiedAuthDep,
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> PaginatedResponse[SleepSummary]:
     """Returns daily sleep metrics."""
+    enforce_user_access(auth, user_id)
     start_datetime = parse_query_datetime(start_date)
     end_datetime = parse_query_datetime(end_date)
     return await summaries_service.get_sleep_summaries(db, user_id, start_datetime, end_datetime, cursor, limit)
@@ -62,11 +64,12 @@ async def get_recovery_summary(
     start_date: str,
     end_date: str,
     db: DbSession,
-    _api_key: ApiKeyDep,
+    auth: UnifiedAuthDep,
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> PaginatedResponse[RecoverySummary]:
     """Returns daily recovery metrics (Sleep + HRV + RHR)."""
+    enforce_user_access(auth, user_id)
     raise HTTPException(status_code=501, detail="Not implemented")
 
 
@@ -74,7 +77,7 @@ async def get_recovery_summary(
 async def get_body_summary(
     user_id: UUID,
     db: DbSession,
-    _api_key: ApiKeyDep,
+    auth: UnifiedAuthDep,
     average_period: Annotated[int, Query(ge=1, le=7, description="Days to average vitals (1-7)")] = 7,
     latest_window_hours: Annotated[
         int, Query(ge=1, le=24, description="Hours for latest readings to be considered valid (1-24)")
@@ -92,4 +95,5 @@ async def get_body_summary(
 
     Returns null if no body data exists for the user.
     """
+    enforce_user_access(auth, user_id)
     return await summaries_service.get_body_summary(db, user_id, average_period, latest_window_hours)

@@ -9,7 +9,7 @@ from app.config import settings
 from app.database import DbSession
 from app.models import Developer
 from app.repositories.developer_repository import DeveloperRepository
-from app.schemas.sdk import SDKAuthContext
+from app.schemas.sdk import AuthContext, SDKAuthContext
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 developer_repository = DeveloperRepository(Developer)
@@ -140,3 +140,67 @@ async def get_sdk_auth(
 
 
 SDKAuthDep = Annotated[SDKAuthContext, Depends(get_sdk_auth)]
+
+
+async def get_unified_auth(
+    db: DbSession,
+    token: Annotated[str | None, Depends(oauth2_scheme)] = None,
+    x_open_wearables_api_key: str | None = Header(None, alias="X-Open-Wearables-API-Key"),
+) -> AuthContext:
+    """Unified authentication for data-access endpoints.
+
+    Priority:
+    1. Developer JWT (non-SDK scope) - full access
+    2. SDK token (scope="sdk") - scoped to user_id
+    3. API key header - full access
+    """
+    from app.services.api_key_service import api_key_service
+
+    if token:
+        try:
+            payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+
+            # SDK token
+            if payload.get("scope") == "sdk":
+                sub = payload.get("sub")
+                return AuthContext(
+                    auth_type="sdk_token",
+                    user_id=UUID(sub) if sub else None,
+                    app_id=payload.get("app_id"),
+                )
+
+            # Developer token
+            developer_id = payload.get("sub")
+            if developer_id:
+                developer = developer_repository.get(db, UUID(developer_id))
+                if developer:
+                    return AuthContext(auth_type="developer", developer_id=developer.id)
+        except (JWTError, ValueError):
+            pass  # Fall through to API key check
+
+    # API key fallback
+    if x_open_wearables_api_key:
+        api_key = api_key_service.validate_api_key(db, x_open_wearables_api_key)
+        return AuthContext(auth_type="api_key", api_key_id=api_key.id)
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required: provide Bearer token or API key",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+UnifiedAuthDep = Annotated[AuthContext, Depends(get_unified_auth)]
+
+
+def enforce_user_access(auth: AuthContext, user_id: UUID) -> None:
+    """Enforce that SDK tokens can only access their own user's data.
+
+    Developer tokens and API keys have full access (no restriction).
+    SDK tokens must match the user_id from the URL path.
+    """
+    if auth.auth_type == "sdk_token" and (not auth.user_id or auth.user_id != user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="SDK token does not match requested user_id",
+        )

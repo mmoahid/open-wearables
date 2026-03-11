@@ -18,7 +18,7 @@ from tests.factories import (
     UserFactory,
     WorkoutDetailsFactory,
 )
-from tests.utils import api_key_headers
+from tests.utils import api_key_headers, sdk_token_headers
 
 
 class TestSleepSummaryEndpoint:
@@ -1299,3 +1299,92 @@ class TestBodySummaryEndpoint:
 
         # Should use the most recent value
         assert data["slow_changing"]["weight_kg"] == 72.5
+
+
+class TestUnifiedAuthOnSummaries:
+    """Test that summary endpoints accept SDK tokens with proper user_id enforcement."""
+
+    def test_sdk_token_can_access_own_activity_summary(self, client: TestClient, db: Session) -> None:
+        """SDK token should be able to access summaries for its own user_id."""
+        user = UserFactory()
+
+        response = client.get(
+            f"/api/v1/users/{user.id}/summaries/activity",
+            headers=sdk_token_headers(user.id),
+            params={"start_date": "2025-12-25T00:00:00Z", "end_date": "2025-12-27T00:00:00Z"},
+        )
+
+        assert response.status_code == 200
+
+    def test_sdk_token_cannot_access_other_user_activity_summary(self, client: TestClient, db: Session) -> None:
+        """SDK token should be rejected when accessing another user's summaries."""
+        user = UserFactory()
+        other_user = UserFactory()
+
+        response = client.get(
+            f"/api/v1/users/{other_user.id}/summaries/activity",
+            headers=sdk_token_headers(user.id),
+            params={"start_date": "2025-12-25T00:00:00Z", "end_date": "2025-12-27T00:00:00Z"},
+        )
+
+        assert response.status_code == 403
+
+    def test_sdk_token_can_access_own_sleep_summary(self, client: TestClient, db: Session) -> None:
+        """SDK token should be able to access sleep summaries for its own user_id."""
+        user = UserFactory()
+
+        response = client.get(
+            f"/api/v1/users/{user.id}/summaries/sleep",
+            headers=sdk_token_headers(user.id),
+            params={"start_date": "2025-12-25T00:00:00Z", "end_date": "2025-12-27T00:00:00Z"},
+        )
+
+        assert response.status_code == 200
+
+    def test_sdk_token_cannot_access_other_user_sleep_summary(self, client: TestClient, db: Session) -> None:
+        """SDK token should be rejected when accessing another user's sleep summaries."""
+        user = UserFactory()
+        other_user = UserFactory()
+
+        response = client.get(
+            f"/api/v1/users/{other_user.id}/summaries/sleep",
+            headers=sdk_token_headers(user.id),
+            params={"start_date": "2025-12-25T00:00:00Z", "end_date": "2025-12-27T00:00:00Z"},
+        )
+
+        assert response.status_code == 403
+
+    def test_sdk_token_can_access_own_body_summary(self, client: TestClient, db: Session) -> None:
+        """SDK token should be able to access body summaries for its own user_id."""
+        user = UserFactory()
+
+        response = client.get(
+            f"/api/v1/users/{user.id}/summaries/body",
+            headers=sdk_token_headers(user.id),
+        )
+
+        assert response.status_code == 200
+
+    def test_api_key_still_works_on_summaries(self, client: TestClient, db: Session) -> None:
+        """API key should still work on summary endpoints (backwards compatibility)."""
+        user = UserFactory()
+        api_key = ApiKeyFactory()
+
+        response = client.get(
+            f"/api/v1/users/{user.id}/summaries/activity",
+            headers=api_key_headers(api_key.id),
+            params={"start_date": "2025-12-25T00:00:00Z", "end_date": "2025-12-27T00:00:00Z"},
+        )
+
+        assert response.status_code == 200
+
+    def test_no_auth_returns_401(self, client: TestClient, db: Session) -> None:
+        """No authentication should return 401."""
+        user = UserFactory()
+
+        response = client.get(
+            f"/api/v1/users/{user.id}/summaries/activity",
+            params={"start_date": "2025-12-25T00:00:00Z", "end_date": "2025-12-27T00:00:00Z"},
+        )
+
+        assert response.status_code == 401

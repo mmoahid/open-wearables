@@ -1,4 +1,4 @@
-from app.utils.auth import DeveloperDep, SDKAuthDep
+from app.utils.auth import DeveloperDep, SDKAuthDep, UnifiedAuthDep, enforce_user_access
 
 from .api_key_service import ApiKeyDep, api_key_service
 from .apple.auto_export.import_service import import_service as ae_import_service
@@ -29,6 +29,8 @@ __all__ = [
     "DeveloperDep",
     "ApiKeyDep",
     "SDKAuthDep",
+    "UnifiedAuthDep",
+    "enforce_user_access",
     "user_service",
     "ae_import_service",
     "hk_import_service",

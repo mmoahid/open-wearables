@@ -10,7 +10,7 @@ from app.schemas.timeseries import (
     TimeSeriesQueryParams,
     TimeSeriesSample,
 )
-from app.services import ApiKeyDep, timeseries_service
+from app.services import UnifiedAuthDep, enforce_user_access, timeseries_service
 from app.utils.dates import parse_query_datetime
 
 router = APIRouter()
@@ -22,13 +22,14 @@ async def get_timeseries(
     start_time: str,
     end_time: str,
     db: DbSession,
-    _api_key: ApiKeyDep,
+    auth: UnifiedAuthDep,
     types: Annotated[list[SeriesType], Query()] = [],
     resolution: Literal["raw", "1min", "5min", "15min", "1hour"] = "raw",
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> PaginatedResponse[TimeSeriesSample]:
     """Returns granular time series data (biometrics or activity)."""
+    enforce_user_access(auth, user_id)
     params = TimeSeriesQueryParams(
         start_datetime=parse_query_datetime(start_time),
         end_datetime=parse_query_datetime(end_time),
