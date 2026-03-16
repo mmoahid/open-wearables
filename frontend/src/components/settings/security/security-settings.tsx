@@ -1,109 +1,145 @@
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { z } from 'zod';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { authService } from '@/lib/api/services/auth.service';
-import type { ChangePasswordRequest } from '@/lib/api/types';
-
-const passwordChangeSchema = z
-  .object({
-    current_password: z.string().min(1, 'Current password is required'),
-    new_password: z.string().min(1, 'New password is required'),
-    confirm_password: z.string().min(1, 'Please confirm your password'),
-  })
-  .refine((data) => data.new_password === data.confirm_password, {
-    message: 'Passwords do not match',
-    path: ['confirm_password'],
-  });
-
-type PasswordChangeForm = z.infer<typeof passwordChangeSchema>;
+import { useAuth } from '@/hooks/use-auth';
+import {
+  changePasswordSchema,
+  type ChangePasswordFormData,
+} from '@/lib/validation/auth.schemas';
 
 export function SecuritySettings() {
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors },
-  } = useForm<PasswordChangeForm>({
-    resolver: zodResolver(passwordChangeSchema),
+  const { changePassword, isChangePasswordPending } = useAuth();
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const form = useForm<ChangePasswordFormData>({
+    resolver: zodResolver(changePasswordSchema),
+    defaultValues: {
+      current_password: '',
+      new_password: '',
+      confirm_password: '',
+    },
   });
 
-  const mutation = useMutation({
-    mutationFn: (data: ChangePasswordRequest) =>
-      authService.changePassword(data),
-    onSuccess: () => {
-      toast.success('Password updated successfully');
-      reset();
-    },
-    onError: (error: any) => {
-      const detail =
-        error.response?.data?.detail || 'Failed to update password';
-      toast.error(detail);
-    },
-  });
+  const onSubmit = (data: ChangePasswordFormData) => {
+    changePassword(
+      {
+        current_password: data.current_password,
+        new_password: data.new_password,
+        confirm_password: data.confirm_password,
+      },
+      { onSuccess: () => form.reset() }
+    );
+  };
 
   return (
-    <div className="rounded-xl border border-border/50 bg-card/30 overflow-hidden shadow-sm">
-      <div className="px-6 py-5 border-b border-border/50 bg-card/50">
-        <h3 className="text-lg font-semibold text-white">Security</h3>
-        <p className="text-sm text-zinc-400 mt-1">
+    <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden">
+      <div className="px-6 py-4 border-b border-zinc-800">
+        <h3 className="text-sm font-medium text-white">Security</h3>
+        <p className="text-xs text-zinc-500 mt-1">
           Update your password to keep your developer account secure.
         </p>
       </div>
 
-      <form
-        onSubmit={handleSubmit((data) => mutation.mutate(data))}
-        className="p-6 space-y-5"
-      >
-        <div className="space-y-2">
-          <Label htmlFor="current_password">Current Password</Label>
-          <Input
-            {...register('current_password')}
-            id="current_password"
-            type="password"
-            placeholder="••••••••"
-            autoComplete="current-password"
-          />
-          {errors.current_password && (
-            <p className="text-xs font-medium text-red-400 mt-1">
-              {errors.current_password.message}
+      <form onSubmit={form.handleSubmit(onSubmit)} className="p-6 space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="current_password" className="text-xs text-zinc-300">
+            Current Password
+          </Label>
+          <div className="relative group">
+            <Input
+              id="current_password"
+              type={showCurrentPassword ? 'text' : 'password'}
+              {...form.register('current_password')}
+              className="bg-zinc-900/50 border-zinc-800 pr-10"
+              placeholder="••••••••"
+              autoComplete="current-password"
+            />
+            <button
+              type="button"
+              onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+              className="absolute inset-y-0 right-3 flex items-center text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              {showCurrentPassword ? (
+                <EyeOff className="w-4 h-4" />
+              ) : (
+                <Eye className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+          {form.formState.errors.current_password && (
+            <p className="text-xs text-red-500">
+              {form.formState.errors.current_password.message}
             </p>
           )}
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="new_password">New Password</Label>
-          <Input
-            {...register('new_password')}
-            id="new_password"
-            type="password"
-            placeholder="••••••••"
-            autoComplete="new-password"
-          />
-          {errors.new_password && (
-            <p className="text-xs font-medium text-red-400 mt-1">
-              {errors.new_password.message}
+        <div className="space-y-1.5">
+          <Label htmlFor="new_password" className="text-xs text-zinc-300">
+            New Password
+          </Label>
+          <div className="relative group">
+            <Input
+              id="new_password"
+              type={showNewPassword ? 'text' : 'password'}
+              {...form.register('new_password')}
+              className="bg-zinc-900/50 border-zinc-800 pr-10"
+              placeholder="At least 8 characters"
+              autoComplete="new-password"
+            />
+            <button
+              type="button"
+              onClick={() => setShowNewPassword(!showNewPassword)}
+              className="absolute inset-y-0 right-3 flex items-center text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              {showNewPassword ? (
+                <EyeOff className="w-4 h-4" />
+              ) : (
+                <Eye className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+          {form.formState.errors.new_password && (
+            <p className="text-xs text-red-500">
+              {form.formState.errors.new_password.message}
             </p>
           )}
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="confirm_password">Confirm New Password</Label>
-          <Input
-            {...register('confirm_password')}
-            id="confirm_password"
-            type="password"
-            placeholder="••••••••"
-            autoComplete="new-password"
-          />
-          {errors.confirm_password && (
-            <p className="text-xs font-medium text-red-400 mt-1">
-              {errors.confirm_password.message}
+        <div className="space-y-1.5">
+          <Label htmlFor="confirm_password" className="text-xs text-zinc-300">
+            Confirm New Password
+          </Label>
+          <div className="relative group">
+            <Input
+              id="confirm_password"
+              type={showConfirmPassword ? 'text' : 'password'}
+              {...form.register('confirm_password')}
+              className="bg-zinc-900/50 border-zinc-800 pr-10"
+              placeholder="Confirm your password"
+              autoComplete="new-password"
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              className="absolute inset-y-0 right-3 flex items-center text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              {showConfirmPassword ? (
+                <EyeOff className="w-4 h-4" />
+              ) : (
+                <Eye className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+          {form.formState.errors.confirm_password && (
+            <p className="text-xs text-red-500">
+              {form.formState.errors.confirm_password.message}
             </p>
           )}
         </div>
@@ -111,11 +147,17 @@ export function SecuritySettings() {
         <div className="pt-2">
           <Button
             type="submit"
-            variant="neon"
             className="w-full sm:w-auto min-w-[140px]"
-            disabled={mutation.isPending}
+            disabled={isChangePasswordPending}
           >
-            {mutation.isPending ? 'Updating...' : 'Update Password'}
+            {isChangePasswordPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Updating...
+              </>
+            ) : (
+              'Update Password'
+            )}
           </Button>
         </div>
       </form>
