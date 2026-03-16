@@ -149,7 +149,7 @@ POLAR_REDIRECT_URI=http://localhost:8000/api/v1/oauth/polar/callback
     An initial sync is triggered automatically after a successful OAuth connection. To manually sync or fetch data:
 
     ```bash
-    # Sync all data types
+    # Trigger Polar sync (currently exercises/workouts only)
     curl -X POST "http://localhost:8000/api/v1/providers/polar/users/{user_id}/sync?data_type=all" \
       -H "X-Open-Wearables-API-Key: YOUR_API_KEY"
     ```
