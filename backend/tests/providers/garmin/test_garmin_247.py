@@ -240,10 +240,10 @@ class TestGarmin247Data:
 
         normalized = garmin_247.normalize_sleep(sleep_data, user_id)
 
-        expected_end = datetime(2024, 1, 14, 22, 0, 0, tzinfo=timezone.utc).timestamp() + 7200 + 1800
-        actual_end = datetime.fromisoformat(normalized["end_time"]).timestamp()
+        actual_end = datetime.fromisoformat(normalized["end_time"])
+        expected_end = datetime.fromtimestamp(awake_end_ts, tz=timezone.utc)
         assert actual_end == expected_end
-        assert normalized["duration_seconds"] == 7200 + 1800  # includes awake
+        assert normalized["duration_seconds"] == 9000  # 7200 asleep + 1800 awake
 
     def test_normalize_sleep_missing_stages(self, garmin_247: Garmin247Data) -> None:
         """Test normalizing sleep with missing stage data."""
