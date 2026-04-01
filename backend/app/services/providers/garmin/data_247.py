@@ -204,6 +204,11 @@ class Garmin247Data(Base247DataTemplate):
         sleep_stages: list[SleepStage] | None = None
         if sleep_map := raw_sleep.get("sleepLevelsMap"):
             sleep_stages = self._extract_sleep_stages_from_map(sleep_map)
+            if sleep_stages:
+                last_stage_end = max(int(s.end_time.timestamp()) for s in sleep_stages)
+                end_ts = max(end_ts, last_stage_end)
+                duration = end_ts - start_ts
+                end_dt = self._from_epoch_seconds(end_ts)
 
         # Extract sleep score if available
         sleep_score = None
