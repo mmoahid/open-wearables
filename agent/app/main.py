@@ -3,6 +3,7 @@ from logging import INFO, basicConfig
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 
+from app.agent.utils.model_utils import validate_llm_config
 from app.api import head_router
 from app.config import settings
 from app.integrations.celery import create_celery
@@ -11,6 +12,8 @@ from app.middlewares import add_cors_middleware
 from app.utils.exceptions import handle_exception
 
 basicConfig(level=INFO, format="[%(asctime)s - %(name)s] (%(levelname)s) %(message)s")
+
+validate_llm_config()
 
 api = FastAPI(title=settings.api_name)
 celery_app = create_celery()

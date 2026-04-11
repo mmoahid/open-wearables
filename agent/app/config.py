@@ -54,6 +54,24 @@ class Settings(BaseSettings):
     SENTRY_SAMPLES_RATE: float = 0.5
     SENTRY_ENV: str | None = None
 
+    # LLM provider (anthropic | openai | google) — must have matching API key set
+    llm_provider: str = "anthropic"
+    llm_model: str = "claude-sonnet-4-6"
+    llm_model_workers: str = "claude-haiku-4-5-20251001"
+    anthropic_api_key: SecretStr = SecretStr("")
+    openai_api_key: SecretStr = SecretStr("")
+    google_api_key: SecretStr = SecretStr("")
+
+    # OW Backend integration
+    ow_api_url: str = "http://app:8000"
+    ow_api_key: SecretStr = SecretStr("")
+
+    # Conversation lifecycle
+    session_timeout_minutes: int = 10
+    conversation_close_hours: int = 24
+    history_summary_threshold: int = 20
+    max_retries: int = 3
+
     @field_validator("cors_origins", mode="after")
     @classmethod
     def assemble_cors_origins(cls, v: str | list[str]) -> list[str] | str:
