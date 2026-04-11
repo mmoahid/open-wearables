@@ -7,6 +7,12 @@ class AgentMode(StrEnum):
     GENERAL = "general"
 
 
+class ConversationStatus(StrEnum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    CLOSED = "closed"
+
+
 class BaseAgentQueryRequest(BaseModel):
     message: str
 

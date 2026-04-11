@@ -4,31 +4,36 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 if TYPE_CHECKING:
-    from app.models.chat_session import ChatSession
+    from app.models.chat_session import Session
     from app.models.message import Message
 
-from sqlalchemy import ForeignKey
+from sqlalchemy import Enum, Text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import BaseDbModel
-from app.mappings import CreatedAt, UUIDPrimaryKey
+from app.mappings import CreatedAt, UpdatedAt, UUIDPrimaryKey
+from app.schemas.agent import ConversationStatus
 
 
 class Conversation(BaseDbModel):
     __tablename__ = "conversations"
 
     id: Mapped[UUIDPrimaryKey]
-    session_id: Mapped[UUID | None] = mapped_column(
-        PGUUID(as_uuid=True),
-        ForeignKey("chat_sessions.id", ondelete="SET NULL"),
-        nullable=True,
-        unique=True,
-        index=True,
+    user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    status: Mapped[ConversationStatus] = mapped_column(
+        Enum(ConversationStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=ConversationStatus.ACTIVE,
+        server_default=ConversationStatus.ACTIVE.value,
     )
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[CreatedAt]
+    updated_at: Mapped[UpdatedAt]
 
-    session: Mapped["ChatSession | None"] = relationship(back_populates="conversation")  # type: ignore[name-defined]
+    sessions: Mapped[list["Session"]] = relationship(  # type: ignore[name-defined]
+        back_populates="conversation", cascade="all, delete-orphan"
+    )
     messages: Mapped[list["Message"]] = relationship(  # type: ignore[name-defined]
         back_populates="conversation", cascade="all, delete-orphan"
     )

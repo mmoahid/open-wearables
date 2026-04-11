@@ -1,27 +1,84 @@
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.conversation import Conversation
 from app.repositories.repositories import AsyncCrudRepository
+from app.schemas.agent import ConversationStatus
 
 
 class ConversationCreate(BaseModel):
-    session_id: UUID
+    user_id: UUID
+    status: ConversationStatus = ConversationStatus.ACTIVE
 
 
-class ConversationRepository(AsyncCrudRepository[Conversation, ConversationCreate, BaseModel]):
+class ConversationStatusUpdate(BaseModel):
+    status: ConversationStatus
+
+
+class ConversationSummaryUpdate(BaseModel):
+    summary: str
+
+
+class ConversationRepository(
+    AsyncCrudRepository[Conversation, ConversationCreate, ConversationStatusUpdate]
+):
     def __init__(self) -> None:
         super().__init__(Conversation)
 
-    async def create(self, db: AsyncSession, session_id: UUID) -> Conversation:
-        return await super().create(db, ConversationCreate(session_id=session_id))
+    async def create(self, db: AsyncSession, user_id: UUID) -> Conversation:
+        return await super().create(db, ConversationCreate(user_id=user_id))
 
-    async def get_by_session_id(self, db: AsyncSession, session_id: UUID) -> Conversation | None:
-        result = await db.execute(select(Conversation).where(Conversation.session_id == session_id))
+    async def get_by_id(self, db: AsyncSession, conversation_id: UUID) -> Conversation | None:
+        return await super().get(db, conversation_id)
+
+    async def get_active_by_user_id(self, db: AsyncSession, user_id: UUID) -> Conversation | None:
+        result = await db.execute(
+            select(Conversation).where(
+                Conversation.user_id == user_id,
+                Conversation.status == ConversationStatus.ACTIVE,
+            )
+        )
         return result.scalar_one_or_none()
+
+    async def update_status(
+        self, db: AsyncSession, obj: Conversation, status: ConversationStatus
+    ) -> Conversation:
+        return await super().update(db, obj, ConversationStatusUpdate(status=status))
+
+    async def update_summary(self, db: AsyncSession, obj: Conversation, summary: str) -> Conversation:
+        return await super().update(db, obj, ConversationSummaryUpdate(summary=summary))
+
+    async def mark_inactive_stale(self, db: AsyncSession, max_age: timedelta) -> int:
+        """Mark ACTIVE conversations as INACTIVE when updated_at is older than max_age."""
+        threshold = datetime.now(tz=timezone.utc) - max_age
+        result = await db.execute(
+            update(Conversation)
+            .where(
+                Conversation.status == ConversationStatus.ACTIVE,
+                Conversation.updated_at < threshold,
+            )
+            .values(status=ConversationStatus.INACTIVE)
+        )
+        await db.commit()
+        return result.rowcount
+
+    async def close_stale(self, db: AsyncSession, inactive_since: timedelta) -> int:
+        """Close INACTIVE conversations that have been idle long enough."""
+        threshold = datetime.now(tz=timezone.utc) - inactive_since
+        result = await db.execute(
+            update(Conversation)
+            .where(
+                Conversation.status == ConversationStatus.INACTIVE,
+                Conversation.updated_at < threshold,
+            )
+            .values(status=ConversationStatus.CLOSED)
+        )
+        await db.commit()
+        return result.rowcount
 
 
 conversation_repository = ConversationRepository()

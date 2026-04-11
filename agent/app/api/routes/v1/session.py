@@ -8,22 +8,22 @@ from fastapi import APIRouter, Depends
 from starlette import status
 
 from app.schemas.session import SessionCreateResponse, SessionDeactivateResponse, SessionRequest
-from app.services.chat_session import ChatSessionService
+from app.services.conversation import ConversationService
 from app.utils.auth import CurrentUserId
 
 router = APIRouter(prefix="/session", tags=["session"])
 logger = logging.getLogger(__name__)
 
-ChatSessionServiceDep = Annotated[ChatSessionService, Depends(ChatSessionService)]
+ConversationServiceDep = Annotated[ConversationService, Depends(ConversationService)]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_or_get_session(
     body: SessionRequest,
     current_user: CurrentUserId,
-    service: ChatSessionServiceDep,
+    service: ConversationServiceDep,
 ) -> SessionCreateResponse:
-    session, conversation = await service.upsert_session(current_user, body.session_id)
+    conversation, session = await service.upsert(current_user, body.session_id)
     return SessionCreateResponse(
         session_id=session.id,
         conversation_id=conversation.id,
@@ -35,7 +35,7 @@ async def create_or_get_session(
 async def deactivate_session(
     session_id: UUID,
     current_user: CurrentUserId,
-    service: ChatSessionServiceDep,
+    service: ConversationServiceDep,
 ) -> SessionDeactivateResponse:
     session = await service.deactivate_session(session_id, current_user)
     return SessionDeactivateResponse(session_id=session.id)

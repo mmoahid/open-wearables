@@ -5,8 +5,9 @@ from uuid import UUID
 
 if TYPE_CHECKING:
     from app.models.conversation import Conversation
+    from app.models.message import Message
 
-from sqlalchemy import Boolean, Integer
+from sqlalchemy import Boolean, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,14 +15,22 @@ from app.database import BaseDbModel
 from app.mappings import CreatedAt, UpdatedAt, UUIDPrimaryKey
 
 
-class ChatSession(BaseDbModel):
-    __tablename__ = "chat_sessions"
+class Session(BaseDbModel):
+    __tablename__ = "sessions"
 
     id: Mapped[UUIDPrimaryKey]
-    user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    conversation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
     request_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     created_at: Mapped[CreatedAt]
     updated_at: Mapped[UpdatedAt]
 
-    conversation: Mapped["Conversation"] = relationship(back_populates="session", cascade="all")  # type: ignore[name-defined]
+    conversation: Mapped["Conversation"] = relationship(back_populates="sessions")  # type: ignore[name-defined]
+    messages: Mapped[list["Message"]] = relationship(  # type: ignore[name-defined]
+        back_populates="session", cascade="all, delete-orphan"
+    )
