@@ -86,8 +86,8 @@ class Settings(BaseSettings):
             "llm_model_workers": "claude-haiku-4-5-20251001",
         },
         LLMProvider.OPENAI: {
-            "llm_model": "gpt-5",
-            "llm_model_workers": "gpt-5-mini",
+            "llm_model": "gpt-4.1",
+            "llm_model_workers": "gpt-4.1-mini",
         },
         LLMProvider.GOOGLE: {
             "llm_model": "gemini-2.0-flash",
@@ -98,9 +98,9 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _set_model_defaults(self) -> "Settings":
         defaults = self._PROVIDER_DEFAULTS.get(self.llm_provider, self._PROVIDER_DEFAULTS[LLMProvider.ANTHROPIC])
-        if self.llm_model is None:
+        if not self.llm_model:
             self.llm_model = defaults["llm_model"]
-        if self.llm_model_workers is None:
+        if not self.llm_model_workers:
             self.llm_model_workers = defaults["llm_model_workers"]
         return self
 
