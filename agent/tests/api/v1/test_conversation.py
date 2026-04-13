@@ -1,4 +1,4 @@
-"""Tests for POST /api/v1/session and PATCH /api/v1/session/{id} routes."""
+"""Tests for POST /api/v1/conversation and PATCH /api/v1/conversation/{id} routes."""
 
 from uuid import uuid4
 
@@ -10,19 +10,18 @@ from app.schemas.agent import ConversationStatus
 from tests.factories import ConversationFactory, SessionFactory
 
 
-class TestCreateOrGetSession:
-    def test_creates_new_session_for_new_user(
+class TestCreateOrGetConversation:
+    def test_creates_new_conversation_for_new_user(
         self, client: TestClient, auth_headers: dict
     ) -> None:
-        response = client.post("/api/v1/session", json={}, headers=auth_headers)
+        response = client.post("/api/v1/conversation", json={}, headers=auth_headers)
 
         assert response.status_code == 201
         data = response.json()
-        assert "session_id" in data
         assert "conversation_id" in data
         assert "created_at" in data
 
-    def test_returns_existing_session_when_passed_valid_session_id(
+    def test_returns_existing_conversation_when_passed_valid_conversation_id(
         self,
         client: TestClient,
         auth_headers: dict,
@@ -31,62 +30,62 @@ class TestCreateOrGetSession:
         user_id,
     ) -> None:
         response = client.post(
-            "/api/v1/session",
-            json={"session_id": str(active_session.id)},
+            "/api/v1/conversation",
+            json={"conversation_id": str(active_conversation.id)},
             headers=auth_headers,
         )
 
         assert response.status_code == 201
         data = response.json()
-        assert data["session_id"] == str(active_session.id)
         assert data["conversation_id"] == str(active_conversation.id)
 
-    def test_creates_new_session_when_session_id_is_unknown(
+    def test_creates_new_conversation_when_conversation_id_is_unknown(
         self, client: TestClient, auth_headers: dict
     ) -> None:
         response = client.post(
-            "/api/v1/session",
-            json={"session_id": str(uuid4())},
+            "/api/v1/conversation",
+            json={"conversation_id": str(uuid4())},
             headers=auth_headers,
         )
 
         assert response.status_code == 201
         data = response.json()
-        assert "session_id" in data
+        assert "conversation_id" in data
 
     def test_requires_auth(self, client: TestClient) -> None:
-        response = client.post("/api/v1/session", json={})
+        response = client.post("/api/v1/conversation", json={})
 
         assert response.status_code == 401
 
 
-class TestDeactivateSession:
-    def test_deactivates_own_session(
+class TestDeactivateConversation:
+    def test_deactivates_own_conversation(
         self,
         client: TestClient,
         auth_headers: dict,
         active_session,
+        active_conversation,
     ) -> None:
         response = client.patch(
-            f"/api/v1/session/{active_session.id}",
+            f"/api/v1/conversation/{active_conversation.id}",
             headers=auth_headers,
         )
 
         assert response.status_code == 200
         data = response.json()
-        assert data["session_id"] == str(active_session.id)
+        assert data["conversation_id"] == str(active_conversation.id)
 
-    def test_returns_404_for_unknown_session(
+    def test_returns_404_for_unknown_conversation(
         self, client: TestClient, auth_headers: dict
     ) -> None:
         response = client.patch(
-            f"/api/v1/session/{uuid4()}",
+            f"/api/v1/conversation/{uuid4()}",
             headers=auth_headers,
         )
 
         assert response.status_code == 404
 
-    def test_returns_403_for_session_owned_by_other_user(
+    def test_returns_403_for_conversation_owned_by_other_user(
         self,
         client: TestClient,
         auth_headers: dict,
@@ -95,16 +94,16 @@ class TestDeactivateSession:
         other_conv = ConversationFactory(
             user_id=uuid4(), status=ConversationStatus.ACTIVE
         )
-        other_sess = SessionFactory(conversation=other_conv, active=True)
+        SessionFactory(conversation=other_conv, active=True)
 
         response = client.patch(
-            f"/api/v1/session/{other_sess.id}",
+            f"/api/v1/conversation/{other_conv.id}",
             headers=auth_headers,
         )
 
         assert response.status_code == 403
 
-    def test_requires_auth(self, client: TestClient, active_session) -> None:
-        response = client.patch(f"/api/v1/session/{active_session.id}")
+    def test_requires_auth(self, client: TestClient, active_conversation) -> None:
+        response = client.patch(f"/api/v1/conversation/{active_conversation.id}")
 
         assert response.status_code == 401

@@ -1,9 +1,8 @@
-"""Tests for POST /api/v1/chat/{session_id} route."""
+"""Tests for POST /api/v1/chat/{conversation_id} route."""
 
 from unittest.mock import MagicMock
 from uuid import uuid4
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.schemas.agent import ConversationStatus
@@ -19,10 +18,11 @@ class TestSendMessage:
         client: TestClient,
         auth_headers: dict,
         active_session,
+        active_conversation,
         mock_celery: MagicMock,
     ) -> None:
         response = client.post(
-            f"/api/v1/chat/{active_session.id}",
+            f"/api/v1/chat/{active_conversation.id}",
             json={"message": "How was my sleep?", "callback_url": CALLBACK_URL},
             headers=auth_headers,
         )
@@ -41,7 +41,7 @@ class TestSendMessage:
         mock_celery: MagicMock,
     ) -> None:
         client.post(
-            f"/api/v1/chat/{active_session.id}",
+            f"/api/v1/chat/{active_conversation.id}",
             json={"message": "Steps today?", "callback_url": CALLBACK_URL},
             headers=auth_headers,
         )
@@ -52,7 +52,7 @@ class TestSendMessage:
         assert call_kwargs["session_id"] == str(active_session.id)
         assert call_kwargs["conversation_id"] == str(active_conversation.id)
 
-    def test_returns_404_for_unknown_session(
+    def test_returns_404_for_unknown_conversation(
         self, client: TestClient, auth_headers: dict
     ) -> None:
         response = client.post(
@@ -73,10 +73,10 @@ class TestSendMessage:
         closed_conv = ConversationFactory(
             user_id=user_id, status=ConversationStatus.CLOSED
         )
-        sess = SessionFactory(conversation=closed_conv, active=True)
+        SessionFactory(conversation=closed_conv, active=True)
 
         response = client.post(
-            f"/api/v1/chat/{sess.id}",
+            f"/api/v1/chat/{closed_conv.id}",
             json={"message": "Hello", "callback_url": CALLBACK_URL},
             headers=auth_headers,
         )
@@ -93,10 +93,10 @@ class TestSendMessage:
         conv = ConversationFactory(
             user_id=user_id, status=ConversationStatus.ACTIVE
         )
-        inactive_sess = SessionFactory(conversation=conv, active=False)
+        SessionFactory(conversation=conv, active=False)
 
         response = client.post(
-            f"/api/v1/chat/{inactive_sess.id}",
+            f"/api/v1/chat/{conv.id}",
             json={"message": "Hello", "callback_url": CALLBACK_URL},
             headers=auth_headers,
         )
@@ -108,18 +108,19 @@ class TestSendMessage:
         client: TestClient,
         auth_headers: dict,
         active_session,
+        active_conversation,
     ) -> None:
         response = client.post(
-            f"/api/v1/chat/{active_session.id}",
+            f"/api/v1/chat/{active_conversation.id}",
             json={"message": "", "callback_url": CALLBACK_URL},
             headers=auth_headers,
         )
 
         assert response.status_code == 422
 
-    def test_requires_auth(self, client: TestClient, active_session) -> None:
+    def test_requires_auth(self, client: TestClient, active_session, active_conversation) -> None:
         response = client.post(
-            f"/api/v1/chat/{active_session.id}",
+            f"/api/v1/chat/{active_conversation.id}",
             json={"message": "Hello", "callback_url": CALLBACK_URL},
         )
 

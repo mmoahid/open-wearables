@@ -1,42 +1,37 @@
-"""Factory for the main ReasoningAgent (pydantic-ai Agent with tools)."""
+"""Health-domain reasoning agent — wraps pygentic-ai BaseAgent."""
 
 from __future__ import annotations
 
-from pydantic_ai import Agent
+from pygentic_ai import BaseAgent
 
 from app.agent.prompts.agent_prompts import build_system_prompt
 from app.agent.utils.model_utils import get_llm
 from app.schemas.agent import AgentMode
-from app.schemas.language import Language
+from app.schemas.language import LANGUAGE_NAMES, Language
 
 
-def build_reasoning_agent(
-    mode: AgentMode,
-    tools: list,
-    language: Language | None = None,
-) -> Agent[None, str]:
-    """Create a pydantic-ai Agent for the given mode and tool list.
+class HealthReasoningAgent(BaseAgent):
+    """ReAct-style reasoning agent for the Open Wearables health domain.
 
-    The agent is stateless — a new instance is created per request so it is
-    safe to run from concurrent Celery tasks.
+    Wraps pygentic-ai BaseAgent with health-specific instructions and
+    the configured LLM provider from app settings.
     """
-    vendor, model, api_key = get_llm()
-    model_str = _model_string(vendor, model)
-    system_prompt = build_system_prompt(mode, language)
 
-    agent: Agent[None, str] = Agent(
-        model=model_str,
-        system_prompt=system_prompt,
-        tools=tools,
-    )
-    return agent
+    def __init__(
+        self,
+        mode: AgentMode = AgentMode.GENERAL,
+        tools: list | None = None,
+        language: Language | None = None,
+    ) -> None:
+        vendor, model, api_key = get_llm()
+        lang_name = LANGUAGE_NAMES[language] if language else LANGUAGE_NAMES[Language.english]
+        instructions = build_system_prompt(mode, language)
 
-
-def _model_string(vendor: str, model: str) -> str:
-    match vendor:
-        case "openai":
-            return f"openai:{model}"
-        case "google":
-            return f"google-gla:{model}"
-        case _:  # anthropic default
-            return f"anthropic:{model}"
+        super().__init__(
+            llm_vendor=vendor,
+            llm_model=model,
+            api_key=api_key,
+            tool_list=tools or [],
+            system_prompt=instructions,
+            language=lang_name,
+        )

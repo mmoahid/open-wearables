@@ -54,7 +54,7 @@ class TestConversationServiceUpsert:
         assert conversation.id == conv.id
         assert session.id == sess.id
 
-    async def test_valid_session_id_reuses_both(
+    async def test_valid_conversation_id_reuses_both(
         self, db: AsyncSession, service: ConversationService
     ) -> None:
         user_id = uuid4()
@@ -62,7 +62,7 @@ class TestConversationServiceUpsert:
         sess = SessionFactory(conversation=conv, active=True)
         await db.flush()
 
-        conversation, session = await service.upsert(user_id, session_id=sess.id)
+        conversation, session = await service.upsert(user_id, conversation_id=conv.id)
 
         assert conversation.id == conv.id
         assert session.id == sess.id
@@ -70,17 +70,17 @@ class TestConversationServiceUpsert:
     async def test_mismatched_user_id_falls_through_to_new_conversation(
         self, db: AsyncSession, service: ConversationService
     ) -> None:
-        # session belongs to a different user
+        # conversation belongs to a different user
         conv = ConversationFactory(user_id=uuid4(), status=ConversationStatus.ACTIVE)
-        sess = SessionFactory(conversation=conv, active=True)
+        SessionFactory(conversation=conv, active=True)
         await db.flush()
 
         other_user = uuid4()
-        conversation, session = await service.upsert(other_user, session_id=sess.id)
+        conversation, session = await service.upsert(other_user, conversation_id=conv.id)
 
-        # Should NOT reuse the mismatched session
+        # Should NOT reuse the mismatched conversation
         assert conversation.user_id == other_user
-        assert session.id != sess.id
+        assert conversation.id != conv.id
 
 
 class TestConversationServiceGetActive:
@@ -92,12 +92,12 @@ class TestConversationServiceGetActive:
         sess = SessionFactory(conversation=conv, active=True)
         await db.flush()
 
-        conversation, session = await service.get_active(sess.id, user_id)
+        conversation, session = await service.get_active(conv.id, user_id)
 
         assert conversation.id == conv.id
         assert session.id == sess.id
 
-    async def test_raises_404_for_unknown_session(
+    async def test_raises_404_for_unknown_conversation(
         self, db: AsyncSession, service: ConversationService
     ) -> None:
         with pytest.raises(HTTPException) as exc:
@@ -109,11 +109,11 @@ class TestConversationServiceGetActive:
         self, db: AsyncSession, service: ConversationService
     ) -> None:
         conv = ConversationFactory(user_id=uuid4(), status=ConversationStatus.ACTIVE)
-        sess = SessionFactory(conversation=conv, active=True)
+        SessionFactory(conversation=conv, active=True)
         await db.flush()
 
         with pytest.raises(HTTPException) as exc:
-            await service.get_active(sess.id, uuid4())
+            await service.get_active(conv.id, uuid4())
 
         assert exc.value.status_code == 403
 
@@ -122,11 +122,11 @@ class TestConversationServiceGetActive:
     ) -> None:
         user_id = uuid4()
         conv = ConversationFactory(user_id=user_id, status=ConversationStatus.CLOSED)
-        sess = SessionFactory(conversation=conv, active=True)
+        SessionFactory(conversation=conv, active=True)
         await db.flush()
 
         with pytest.raises(HTTPException) as exc:
-            await service.get_active(sess.id, user_id)
+            await service.get_active(conv.id, user_id)
 
         assert exc.value.status_code == 410
 
@@ -135,11 +135,11 @@ class TestConversationServiceGetActive:
     ) -> None:
         user_id = uuid4()
         conv = ConversationFactory(user_id=user_id, status=ConversationStatus.ACTIVE)
-        sess = SessionFactory(conversation=conv, active=False)
+        SessionFactory(conversation=conv, active=False)
         await db.flush()
 
         with pytest.raises(HTTPException) as exc:
-            await service.get_active(sess.id, user_id)
+            await service.get_active(conv.id, user_id)
 
         assert exc.value.status_code == 410
 

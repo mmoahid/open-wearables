@@ -24,7 +24,7 @@ class Conversation(BaseDbModel):
         PGUUID(as_uuid=True), nullable=False, index=True
     )
     status: Mapped[ConversationStatus] = mapped_column(
-        Enum(ConversationStatus, values_callable=lambda x: [e.value for e in x]),
+        Enum(ConversationStatus, values_callable=lambda x: [e.value for e in x], create_type=False),
         nullable=False,
         default=ConversationStatus.ACTIVE,
         server_default=ConversationStatus.ACTIVE.value,

@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from app.agent.workflows.agent_workflow import WorkflowEngine
-from app.agent.static.default_msgs import GUARDRAILS_REFUSAL_MSG, WORKFLOW_ERROR_MSG
+from app.agent.static.default_msgs import get_guardrails_refusal_msg, get_workflow_error_msg
 
 
 @pytest.fixture
@@ -75,7 +75,7 @@ class TestWorkflowEngineRun:
                 history=[],
             )
 
-        assert result == GUARDRAILS_REFUSAL_MSG
+        assert result == get_guardrails_refusal_msg()
 
     async def test_router_failure_defaults_to_answer(
         self, engine: WorkflowEngine

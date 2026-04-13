@@ -1,7 +1,7 @@
 FROM python:3.13-slim AS builder
 
     RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential libpq-dev && \
+    apt-get install -y --no-install-recommends build-essential libpq-dev git && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
     RUN pip install --no-cache-dir --upgrade pyopenssl
@@ -14,6 +14,7 @@ FROM python:3.13-slim AS builder
     COPY . .
 
     ENV VIRTUAL_ENV=/opt/venv
+    ENV UV_PROJECT_ENVIRONMENT=/opt/venv
     RUN uv venv $VIRTUAL_ENV
     ENV PATH="$VIRTUAL_ENV/bin:$PATH"
     RUN uv sync --locked --no-dev
@@ -21,7 +22,7 @@ FROM python:3.13-slim AS builder
 FROM python:3.13-slim
 
     RUN apt-get update && \
-    apt-get install -y --no-install-recommends libpq5 && \
+    apt-get install -y --no-install-recommends libpq5 git && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

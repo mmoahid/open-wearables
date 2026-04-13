@@ -1,17 +1,17 @@
-"""Core workflow engine — orchestrates router → reasoning → guardrails pipeline."""
+"""Core workflow engine — drives the pygentic-ai user_assistant_graph."""
 
 from __future__ import annotations
 
 import logging
 from uuid import UUID
 
-from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
+from pygentic_ai import WorkflowState, user_assistant_graph
+from pygentic_ai.workflows.nodes import StartNode
 
-from app.agent.engines.guardrails import build_guardrails
-from app.agent.engines.reasoning import build_reasoning_agent
-from app.agent.engines.router import RouterDecision, build_router
-from app.agent.static.default_msgs import get_guardrails_refusal_msg
+from app.agent.engines.guardrails import HealthGuardrailsAgent
+from app.agent.engines.reasoning import HealthReasoningAgent
+from app.agent.engines.router import HealthRouter
 from app.agent.tools.tool_registry import tool_manager
 from app.schemas.agent import AgentMode
 from app.schemas.language import LANGUAGE_NAMES, Language
@@ -36,7 +36,8 @@ class WorkflowEngine:
     """Stateless per-request workflow.
 
     A new set of agents is instantiated for every call — safe for Celery workers.
-    Pipeline: ROUTER → (REASONING + tools) → GUARDRAILS → response string.
+    Pipeline: ROUTER → (REASONING + tools) → GUARDRAILS → response string,
+    orchestrated by the pygentic-ai user_assistant_graph.
     """
 
     async def run(
@@ -47,41 +48,30 @@ class WorkflowEngine:
         mode: AgentMode = AgentMode.GENERAL,
         language: Language | None = None,
     ) -> str:
-        # 1. Route: decide whether to answer or refuse
-        router = build_router()
-        try:
-            router_result = await router.run(message)
-            decision: RouterDecision = router_result.data
-        except Exception:
-            logger.exception("Router failed — defaulting to answer")
-            decision = RouterDecision(route="answer", reasoning="router error")
+        lang_name = LANGUAGE_NAMES[language] if language else LANGUAGE_NAMES[Language.english]
 
-        if decision.route == "refuse":
-            logger.info("Message refused: %s", decision.reasoning)
-            return get_guardrails_refusal_msg(language)
-
-        # 2. Generate: reasoning agent with tools and conversation history
         tools = tool_manager.get_tools_for_mode(mode)
-        reasoning_agent = build_reasoning_agent(mode, tools, language=language)
+        agent = HealthReasoningAgent(mode=mode, tools=tools, language=language)
+        router = HealthRouter()
+        guardrails = HealthGuardrailsAgent(language=lang_name)
+
+        # Inject user_id so tools can resolve the caller
+        augmented_message = f"[user_id={user_id}]\n{message}"
         seed_history = _build_history(history)
 
-        try:
-            # Inject user_id into the message context so tools can use it
-            augmented_message = f"[user_id={user_id}]\n{message}"
-            gen_result = await reasoning_agent.run(augmented_message, message_history=seed_history)
-            raw_response: str = str(gen_result.data)
-        except Exception:
-            logger.exception("Reasoning agent failed")
-            raise
+        deps = {
+            "agent": agent,
+            "router": router,
+            "guardrails": guardrails,
+            "message": augmented_message,
+            "chat_history": seed_history,
+            # RefuseNode looks up REFUSAL_GENERIC[language] — must be lowercase
+            "language": lang_name.lower(),
+        }
 
-        # 3. Guardrails: clean up and format the response
-        guardrails = build_guardrails(language=LANGUAGE_NAMES.get(language, "English") if language else "English")
-        try:
-            fmt_result = await guardrails.run(raw_response)
-            return str(fmt_result.data)
-        except Exception:
-            logger.warning("Guardrails failed — returning raw response")
-            return raw_response
+        state = WorkflowState()
+        result, _ = await user_assistant_graph.run(StartNode(), state=state, deps=deps)
+        return result
 
     async def summarize(self, messages: list[dict]) -> str:
         """Summarize a list of conversation messages into a compact text.
@@ -89,11 +79,12 @@ class WorkflowEngine:
         Used for history compression when the conversation exceeds the threshold.
         Uses the worker (cheaper) model for cost efficiency.
         """
+        from pydantic_ai import Agent
+
         from app.agent.utils.model_utils import get_llm
-        from app.agent.engines.reasoning import _model_string
 
         vendor, model, _ = get_llm(is_worker=True)
-        model_str = _model_string(vendor, model)
+        model_str = f"{vendor}:{model}"
 
         summarizer: Agent[None, str] = Agent(
             model=model_str,
@@ -107,7 +98,7 @@ class WorkflowEngine:
 
         transcript = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in messages)
         result = await summarizer.run(transcript)
-        return str(result.data)
+        return str(result.output)
 
 
 workflow_engine = WorkflowEngine()
