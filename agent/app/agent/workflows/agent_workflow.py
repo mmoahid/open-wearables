@@ -11,7 +11,7 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
 from app.agent.engines.guardrails import build_guardrails
 from app.agent.engines.reasoning import build_reasoning_agent
 from app.agent.engines.router import RouterDecision, build_router
-from app.agent.static.default_msgs import GUARDRAILS_REFUSAL_MSG
+from app.agent.static.default_msgs import get_guardrails_refusal_msg
 from app.agent.tools.tool_registry import tool_manager
 from app.schemas.agent import AgentMode
 from app.schemas.language import LANGUAGE_NAMES, Language
@@ -58,7 +58,7 @@ class WorkflowEngine:
 
         if decision.route == "refuse":
             logger.info("Message refused: %s", decision.reasoning)
-            return GUARDRAILS_REFUSAL_MSG
+            return get_guardrails_refusal_msg(language)
 
         # 2. Generate: reasoning agent with tools and conversation history
         tools = tool_manager.get_tools_for_mode(mode)

@@ -8,7 +8,7 @@ from uuid import UUID
 import httpx
 from celery import shared_task
 
-from app.agent.static.default_msgs import WORKFLOW_ERROR_MSG
+from app.agent.static.default_msgs import get_workflow_error_msg
 from app.agent.workflows.agent_workflow import workflow_engine
 from app.config import settings
 from app.database import AsyncSessionLocal
@@ -50,7 +50,7 @@ async def _run(
             )
         except Exception:
             logger.exception("Workflow failed for task %s", task_id)
-            response_text = WORKFLOW_ERROR_MSG
+            response_text = get_workflow_error_msg(Language(language) if language else None)
 
         # Persist both messages
         if conversation is not None and session is not None:
