@@ -3,10 +3,12 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.schemas.language import Language
+
 
 class SessionRequest(BaseModel):
     session_id: UUID | None = None
-    language: str | None = None
+    language: Language | None = None
     agent_mode: str | None = None
 
 

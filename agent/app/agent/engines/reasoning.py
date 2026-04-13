@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from pydantic_ai import Agent
 
-from app.agent.prompts.agent_prompts import AGENT_PROMPT_MAPPING
+from app.agent.prompts.agent_prompts import AGENT_PROMPT_MAPPING, build_language_instruction
 from app.agent.utils.model_utils import get_llm
 from app.schemas.agent import AgentMode
+from app.schemas.language import Language
 
 
-def build_reasoning_agent(mode: AgentMode, tools: list) -> Agent[None, str]:
+def build_reasoning_agent(
+    mode: AgentMode,
+    tools: list,
+    language: Language | None = None,
+) -> Agent[None, str]:
     """Create a pydantic-ai Agent for the given mode and tool list.
 
     The agent is stateless — a new instance is created per request so it is
@@ -17,7 +22,7 @@ def build_reasoning_agent(mode: AgentMode, tools: list) -> Agent[None, str]:
     """
     vendor, model, api_key = get_llm()
     model_str = _model_string(vendor, model)
-    system_prompt = AGENT_PROMPT_MAPPING[mode]
+    system_prompt = build_language_instruction(language) + AGENT_PROMPT_MAPPING[mode]
 
     agent: Agent[None, str] = Agent(
         model=model_str,

@@ -10,17 +10,28 @@ Follows the same patterns as the backend test suite:
 
 from __future__ import annotations
 
+import asyncio
 import os
+import sys
 from collections.abc import AsyncGenerator, Generator
 from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+# psycopg3 async mode requires SelectorEventLoop on Windows (not the default ProactorEventLoop)
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+# Must be set before importing any app modules so pydantic-settings picks them up.
+os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-only")
+os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test-key")
+os.environ.setdefault("CELERY_BROKER_URL", "memory://")
+os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
+
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
-from httpx import AsyncClient
 from jose import jwt
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -28,12 +39,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.config import settings
 from app.database import BaseDbModel, _get_async_db_dependency
 from tests import factories
-
-# Ensure env is configured before importing app modules
-os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-only")
-os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test-key")
-os.environ.setdefault("CELERY_BROKER_URL", "memory://")
-os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
 
 
 # ---------------------------------------------------------------------------
@@ -51,7 +56,34 @@ def _postgres_url() -> Generator[str, None, None]:
 
     from testcontainers.postgres import PostgresContainer
 
-    with PostgresContainer(
+    # Subclass to replace SQLAlchemy-based health check with psycopg3 native sync connect.
+    # SQLAlchemy's psycopg3 sync dialect uses the async API internally (via greenlets),
+    # which requires a running event loop — unavailable in this sync fixture.
+    class _SyncReadyPostgresContainer(PostgresContainer):
+        def _connect(self) -> None:  # type: ignore[override]
+            import time
+
+            import psycopg  # psycopg3 native sync — no event loop required
+
+            host = self.get_container_host_ip()
+            deadline = time.monotonic() + 90
+            while time.monotonic() < deadline:
+                try:
+                    port = int(self.get_exposed_port(self.port))
+                    conn = psycopg.connect(
+                        host=host,
+                        port=port,
+                        dbname=self.dbname,
+                        user=self.username,
+                        password=self.password,
+                    )
+                    conn.close()
+                    return
+                except Exception:
+                    time.sleep(0.5)
+            raise RuntimeError("Postgres container did not become ready in time")
+
+    with _SyncReadyPostgresContainer(
         image="postgres:16",
         username="open-wearables",
         password="open-wearables",
@@ -69,9 +101,10 @@ def async_engine(_postgres_url: str) -> Any:
 
 
 @pytest.fixture(scope="session")
-def event_loop_policy():
-    """Use default event loop policy for session-scoped async fixtures."""
-    import asyncio
+def event_loop_policy() -> asyncio.AbstractEventLoopPolicy:
+    """Use SelectorEventLoop on Windows — psycopg3 async requires it."""
+    if sys.platform == "win32":
+        return asyncio.WindowsSelectorEventLoopPolicy()
     return asyncio.DefaultEventLoopPolicy()
 
 
@@ -89,21 +122,27 @@ async def _create_schema(async_engine: Any) -> AsyncGenerator[None, None]:
 async def db(_create_schema: None, async_engine: Any) -> AsyncGenerator[AsyncSession, None]:
     """
     Per-test async session with savepoint-based rollback.
-    Each test sees a clean slate without touching committed data.
+
+    The outer connection holds an open transaction that is rolled back at teardown.
+    Whenever the session commits it releases a SAVEPOINT, and the sync-session event
+    listener immediately opens a new one so the next operation stays within the same
+    outer (never-committed) transaction.
     """
     async with async_engine.connect() as conn:
         await conn.begin()
-        nested = await conn.begin_nested()
 
         session_factory = async_sessionmaker(conn, class_=AsyncSession, expire_on_commit=False)
         session = session_factory()
 
+        # Create an initial SAVEPOINT via the underlying sync session.
+        session.sync_session.begin_nested()
+
         @event.listens_for(session.sync_session, "after_transaction_end")
-        def restart_savepoint(session: Any, transaction: Any) -> None:
-            nonlocal nested
-            if not nested._transaction.is_active:
-                import asyncio
-                nested = asyncio.get_event_loop().run_until_complete(conn.begin_nested())
+        def _restart_savepoint(sync_session: Any, transaction: Any) -> None:
+            # After each SAVEPOINT is released (on flush/commit), open a new one so
+            # subsequent writes stay inside the outer rollback-able transaction.
+            if transaction.nested and not transaction._parent.nested:
+                sync_session.begin_nested()
 
         try:
             yield session

@@ -29,7 +29,7 @@ class TestManageConversationLifecycle:
         await db.flush()
         await _backdate(db, sess, "updated_at", datetime(2000, 1, 1, tzinfo=timezone.utc))
 
-        with patch("app.config.settings") as mock_settings:
+        with patch("app.integrations.celery.tasks.conversation_lifecycle.settings") as mock_settings:
             mock_settings.session_timeout_minutes = 10
             mock_settings.conversation_close_hours = 24
 
@@ -53,9 +53,10 @@ class TestManageConversationLifecycle:
         await db.flush()
         await _backdate(db, conv, "updated_at", datetime(2000, 1, 1, tzinfo=timezone.utc))
 
-        with patch("app.config.settings") as mock_settings:
+        with patch("app.integrations.celery.tasks.conversation_lifecycle.settings") as mock_settings:
             mock_settings.session_timeout_minutes = 10
-            mock_settings.conversation_close_hours = 24
+            # Use a very large close_hours so close_stale does not fire in the same run.
+            mock_settings.conversation_close_hours = 999_999
 
             with patch(
                 "app.integrations.celery.tasks.conversation_lifecycle.AsyncSessionLocal"
@@ -77,7 +78,7 @@ class TestManageConversationLifecycle:
         await db.flush()
         await _backdate(db, conv, "updated_at", datetime(2000, 1, 1, tzinfo=timezone.utc))
 
-        with patch("app.config.settings") as mock_settings:
+        with patch("app.integrations.celery.tasks.conversation_lifecycle.settings") as mock_settings:
             mock_settings.session_timeout_minutes = 10
             mock_settings.conversation_close_hours = 1
 
@@ -101,7 +102,7 @@ class TestManageConversationLifecycle:
         await db.flush()
         # No backdating — conversation is fresh
 
-        with patch("app.config.settings") as mock_settings:
+        with patch("app.integrations.celery.tasks.conversation_lifecycle.settings") as mock_settings:
             mock_settings.session_timeout_minutes = 10
             mock_settings.conversation_close_hours = 24
 

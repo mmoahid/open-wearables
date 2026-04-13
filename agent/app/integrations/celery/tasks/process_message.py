@@ -13,6 +13,7 @@ from app.agent.workflows.agent_workflow import workflow_engine
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.repositories import conversation_repository, session_repository
+from app.schemas.language import Language
 from app.services.conversation import ConversationService
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ async def _run(
     user_id: str,
     message: str,
     callback_url: str,
+    language: str | None = None,
 ) -> None:
     async with AsyncSessionLocal() as db:
         service = ConversationService(db)
@@ -44,6 +46,7 @@ async def _run(
                 user_id=UUID(user_id),
                 message=message,
                 history=history,
+                language=Language(language) if language else None,
             )
         except Exception:
             logger.exception("Workflow failed for task %s", task_id)
@@ -80,6 +83,7 @@ def process_message(
     user_id: str,
     message: str,
     callback_url: str,
+    language: str | None = None,
 ) -> None:
     asyncio.run(
         _run(
@@ -89,5 +93,6 @@ def process_message(
             user_id=user_id,
             message=message,
             callback_url=callback_url,
+            language=language,
         )
     )

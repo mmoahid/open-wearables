@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
+from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
 
 from app.agent.engines.guardrails import build_guardrails
@@ -13,6 +14,7 @@ from app.agent.engines.router import RouterDecision, build_router
 from app.agent.static.default_msgs import GUARDRAILS_REFUSAL_MSG
 from app.agent.tools.tool_registry import tool_manager
 from app.schemas.agent import AgentMode
+from app.schemas.language import Language
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +45,7 @@ class WorkflowEngine:
         message: str,
         history: list[dict],
         mode: AgentMode = AgentMode.GENERAL,
+        language: Language | None = None,
     ) -> str:
         # 1. Route: decide whether to answer or refuse
         router = build_router()
@@ -59,7 +62,7 @@ class WorkflowEngine:
 
         # 2. Generate: reasoning agent with tools and conversation history
         tools = tool_manager.get_tools_for_mode(mode)
-        reasoning_agent = build_reasoning_agent(mode, tools)
+        reasoning_agent = build_reasoning_agent(mode, tools, language=language)
         seed_history = _build_history(history)
 
         try:
@@ -91,8 +94,6 @@ class WorkflowEngine:
 
         vendor, model, _ = get_llm(is_worker=True)
         model_str = _model_string(vendor, model)
-
-        from pydantic_ai import Agent
 
         summarizer: Agent[None, str] = Agent(
             model=model_str,

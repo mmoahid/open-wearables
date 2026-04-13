@@ -1,6 +1,7 @@
 """Mode-specific system prompts for the main reasoning agent."""
 
 from app.schemas.agent import AgentMode
+from app.schemas.language import Language
 
 TEXT_AGENT_PRIMING = """\
 You are an intelligent health assistant for the Open Wearables platform.
@@ -16,6 +17,13 @@ When answering questions:
 4. Use today's date (available via get_today_date) to anchor relative time references ("last week", "yesterday").
 """
 
+_LANGUAGE_NAMES: dict[Language, str] = {
+    Language.english: "English",
+    Language.polish: "Polish",
+    Language.german: "German",
+    Language.spanish: "Spanish",
+}
+
 TEXT_HEALTH_RULESET = """\
 Guidelines:
 - Report trends and patterns, not just single data points.
@@ -24,6 +32,14 @@ Guidelines:
 - If data is missing or insufficient for a reliable answer, say so clearly.
 - Respond in the same language the user writes in.
 """
+
+
+def build_language_instruction(language: Language | None) -> str:
+    """Return an explicit language instruction to prepend to the system prompt."""
+    if language is None:
+        return ""
+    name = _LANGUAGE_NAMES[language]
+    return f"Always respond in {name} ({language.value}), regardless of the language the user writes in.\n"
 
 TEXT_DATA_CAPABILITIES = """\
 You can access the following data for the user:

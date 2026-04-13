@@ -32,6 +32,7 @@ async def send_message(
         user_id=str(current_user),
         message=body.message,
         callback_url=str(body.callback_url),
+        language=body.language.value if body.language else None,
     )
 
     logger.info(f"Queued task {task.id} for session {session.id}")
