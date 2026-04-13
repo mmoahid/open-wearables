@@ -7,7 +7,7 @@ if TYPE_CHECKING:
     from app.models.chat_session import Session
     from app.models.message import Message
 
-from sqlalchemy import Enum, Text
+from sqlalchemy import Enum, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -20,13 +20,17 @@ class Conversation(BaseDbModel):
     __tablename__ = "conversations"
 
     id: Mapped[UUIDPrimaryKey]
-    user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), nullable=False, index=True
+    )
     status: Mapped[ConversationStatus] = mapped_column(
         Enum(ConversationStatus, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         default=ConversationStatus.ACTIVE,
         server_default=ConversationStatus.ACTIVE.value,
     )
+    language: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    agent_mode: Mapped[str | None] = mapped_column(String(50), nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[CreatedAt]
     updated_at: Mapped[UpdatedAt]

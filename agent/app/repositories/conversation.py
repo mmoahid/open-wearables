@@ -13,6 +13,8 @@ from app.schemas.agent import ConversationStatus
 class ConversationCreate(BaseModel):
     user_id: UUID
     status: ConversationStatus = ConversationStatus.ACTIVE
+    language: str | None = None
+    agent_mode: str | None = None
 
 
 class ConversationStatusUpdate(BaseModel):
@@ -29,8 +31,16 @@ class ConversationRepository(
     def __init__(self) -> None:
         super().__init__(Conversation)
 
-    async def create(self, db: AsyncSession, user_id: UUID) -> Conversation:
-        return await super().create(db, ConversationCreate(user_id=user_id))
+    async def create(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        language: str | None = None,
+        agent_mode: str | None = None,
+    ) -> Conversation:
+        return await super().create(
+            db, ConversationCreate(user_id=user_id, language=language, agent_mode=agent_mode)
+        )
 
     async def get_by_id(self, db: AsyncSession, conversation_id: UUID) -> Conversation | None:
         return await super().get(db, conversation_id)

@@ -23,25 +23,35 @@ class ConversationService:
         self._db = db
 
     async def upsert(
-        self, user_id: UUID, session_id: UUID | None = None
+        self,
+        user_id: UUID,
+        conversation_id: UUID | None = None,
+        language: str | None = None,
+        agent_mode: str | None = None,
     ) -> tuple[Conversation, Session]:
         """Get or create a conversation+session pair for the user.
 
-        If session_id is provided and valid (active session on active conversation
-        owned by this user), reuse it. Otherwise find or create an active
+        If conversation_id is provided and valid (active conversation owned by this user),
+        reuse its active session or open a new one. Otherwise find or create an active
         conversation and open a new session on it.
         """
-        if session_id is not None:
-            session = await session_repository.get_by_id(self._db, session_id)
-            if session is not None and session.active:
-                conversation = await conversation_repository.get_by_id(self._db, session.conversation_id)
-                if (
-                    conversation is not None
-                    and conversation.user_id == user_id
-                    and conversation.status == ConversationStatus.ACTIVE
-                ):
-                    logger.info(f"Reusing session {session.id} for user {user_id}")
-                    return conversation, session
+        if conversation_id is not None:
+            conversation = await conversation_repository.get_by_id(self._db, conversation_id)
+            if (
+                conversation is not None
+                and conversation.user_id == user_id
+                and conversation.status == ConversationStatus.ACTIVE
+            ):
+                existing_session = await session_repository.get_active_by_conversation_id(
+                    self._db, conversation.id
+                )
+                if existing_session is not None:
+                    logger.info(f"Reusing session {existing_session.id} on conversation {conversation.id}")
+                    return conversation, existing_session
+
+                new_session = await session_repository.create(self._db, conversation.id)
+                logger.info(f"Created session {new_session.id} on conversation {conversation.id}")
+                return conversation, new_session
 
         conversation = await conversation_repository.get_active_by_user_id(self._db, user_id)
         if conversation is not None:
@@ -56,47 +66,51 @@ class ConversationService:
             logger.info(f"Created session {new_session.id} on existing conversation {conversation.id}")
             return conversation, new_session
 
-        conversation = await conversation_repository.create(self._db, user_id)
+        conversation = await conversation_repository.create(
+            self._db, user_id, language=language, agent_mode=agent_mode
+        )
         new_session = await session_repository.create(self._db, conversation.id)
         logger.info(f"Created conversation {conversation.id} and session {new_session.id} for user {user_id}")
         return conversation, new_session
 
     async def get_active(
-        self, session_id: UUID, user_id: UUID
+        self, conversation_id: UUID, user_id: UUID
     ) -> tuple[Conversation, Session]:
-        """Validate and return the active session + conversation."""
-        session = await session_repository.get_by_id(self._db, session_id)
+        """Validate and return the active conversation + session."""
+        conversation = await conversation_repository.get_by_id(self._db, conversation_id)
 
-        if session is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
+        if conversation is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
 
-        conversation = await conversation_repository.get_by_id(self._db, session.conversation_id)
-
-        if conversation is None or conversation.user_id != user_id:
+        if conversation.user_id != user_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
 
         if conversation.status == ConversationStatus.CLOSED:
             raise HTTPException(status_code=status.HTTP_410_GONE, detail="Conversation is closed.")
 
-        if not session.active:
-            raise HTTPException(status_code=status.HTTP_410_GONE, detail="Session is inactive.")
+        session = await session_repository.get_active_by_conversation_id(self._db, conversation_id)
+
+        if session is None:
+            raise HTTPException(status_code=status.HTTP_410_GONE, detail="No active session.")
 
         return conversation, session
 
-    async def deactivate_session(self, session_id: UUID, user_id: UUID) -> Session:
-        session = await session_repository.get_by_id(self._db, session_id)
+    async def deactivate(self, conversation_id: UUID, user_id: UUID) -> Conversation:
+        conversation = await conversation_repository.get_by_id(self._db, conversation_id)
 
-        if session is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
+        if conversation is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
 
-        conversation = await conversation_repository.get_by_id(self._db, session.conversation_id)
-        if conversation is None or conversation.user_id != user_id:
+        if conversation.user_id != user_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
 
-        if not session.active:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Session already inactive.")
+        session = await session_repository.get_active_by_conversation_id(self._db, conversation_id)
 
-        return await session_repository.deactivate(self._db, session)
+        if session is None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No active session to deactivate.")
+
+        await session_repository.deactivate(self._db, session)
+        return conversation
 
     async def save_messages(
         self,

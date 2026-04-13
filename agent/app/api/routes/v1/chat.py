@@ -17,14 +17,14 @@ logger = logging.getLogger(__name__)
 ConversationServiceDep = Annotated[ConversationService, Depends(ConversationService)]
 
 
-@router.post("/{session_id}")
+@router.post("/{conversation_id}")
 async def send_message(
-    session_id: UUID,
+    conversation_id: UUID,
     body: ChatRequest,
     current_user: CurrentUserId,
     service: ConversationServiceDep,
 ) -> ChatTaskResponse:
-    conversation, session = await service.get_active(session_id, current_user)
+    conversation, session = await service.get_active(conversation_id, current_user)
 
     task = process_message.delay(
         session_id=str(session.id),
@@ -32,8 +32,7 @@ async def send_message(
         user_id=str(current_user),
         message=body.message,
         callback_url=str(body.callback_url),
-        language=body.language.value if body.language else None,
     )
 
-    logger.info(f"Queued task {task.id} for session {session.id}")
+    logger.info(f"Queued task {task.id} for conversation {conversation.id}")
     return ChatTaskResponse(task_id=task.id)

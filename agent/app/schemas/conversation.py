@@ -3,25 +3,24 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.schemas.agent import AgentMode
 from app.schemas.language import Language
 
 
-class SessionRequest(BaseModel):
-    session_id: UUID | None = None
+class ConversationRequest(BaseModel):
+    conversation_id: UUID | None = None
     language: Language | None = None
-    agent_mode: str | None = None
+    agent_mode: AgentMode | None = None
 
 
-class SessionCreateResponse(BaseModel):
-    session_id: UUID
+class ConversationCreateResponse(BaseModel):
     conversation_id: UUID
     created_at: datetime
 
     model_config = {"from_attributes": True}
 
 
-class SessionDeactivateResponse(BaseModel):
-    session_id: UUID
-    active: bool = False
+class ConversationDeactivateResponse(BaseModel):
+    conversation_id: UUID
 
     model_config = {"from_attributes": True}
