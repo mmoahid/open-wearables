@@ -1,12 +1,12 @@
-"""Tests for WorkflowEngine pipeline (router → reasoning → guardrails)."""
+"""Tests for WorkflowEngine pipeline (pygentic-ai user_assistant_graph)."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
-from app.agent.static.default_msgs import get_guardrails_refusal_msg
-from app.agent.workflows.agent_workflow import WorkflowEngine
+from app.agent.workflows.agent_workflow import WorkflowEngine, _build_history
+from app.schemas.agent import AgentMode
 
 
 @pytest.fixture
@@ -14,42 +14,42 @@ def engine() -> WorkflowEngine:
     return WorkflowEngine()
 
 
-@pytest.fixture
-def answer_decision() -> MagicMock:
-    decision = MagicMock()
-    decision.route = "answer"
-    decision.reasoning = "health question"
-    return decision
+class TestBuildHistory:
+    def test_empty_history_returns_empty_list(self) -> None:
+        assert _build_history([]) == []
 
+    def test_user_messages_are_included(self) -> None:
+        history = [{"role": "user", "content": "Hello"}]
+        result = _build_history(history)
+        assert len(result) == 1
 
-@pytest.fixture
-def refuse_decision() -> MagicMock:
-    decision = MagicMock()
-    decision.route = "refuse"
-    decision.reasoning = "off-topic"
-    return decision
+    def test_assistant_messages_are_skipped(self) -> None:
+        history = [
+            {"role": "user", "content": "Question"},
+            {"role": "assistant", "content": "Answer"},
+        ]
+        result = _build_history(history)
+        # Only user turns are seeded into the history
+        assert len(result) == 1
+
+    def test_mixed_history_preserves_user_order(self) -> None:
+        history = [
+            {"role": "user", "content": "First"},
+            {"role": "assistant", "content": "Reply"},
+            {"role": "user", "content": "Second"},
+        ]
+        result = _build_history(history)
+        assert len(result) == 2
 
 
 class TestWorkflowEngineRun:
-    async def test_full_pipeline_returns_formatted_response(
-        self, engine: WorkflowEngine, answer_decision: MagicMock
-    ) -> None:
-        router_result = MagicMock()
-        router_result.data = answer_decision
+    async def test_run_returns_graph_output_as_string(self, engine: WorkflowEngine) -> None:
+        mock_result = MagicMock()
+        mock_result.output = "Formatted response"
 
-        reasoning_result = MagicMock()
-        reasoning_result.data = "Raw response from reasoning agent"
-
-        guardrails_result = MagicMock()
-        guardrails_result.data = "Polished response"
-
-        mock_agent = MagicMock()
-        mock_agent.run = AsyncMock(side_effect=[router_result, reasoning_result, guardrails_result])
-
-        with (
-            patch("app.agent.engines.reasoning.Agent", return_value=mock_agent),
-            patch("app.agent.engines.router.Agent", return_value=mock_agent),
-            patch("app.agent.engines.guardrails.Agent", return_value=mock_agent),
+        with patch(
+            "app.agent.workflows.agent_workflow.user_assistant_graph.run",
+            AsyncMock(return_value=mock_result),
         ):
             result = await engine.run(
                 user_id=uuid4(),
@@ -57,152 +57,89 @@ class TestWorkflowEngineRun:
                 history=[],
             )
 
-        assert result == "Polished response"
+        assert result == "Formatted response"
 
-    async def test_returns_refusal_message_when_router_refuses(
-        self, engine: WorkflowEngine, refuse_decision: MagicMock
-    ) -> None:
-        router_result = MagicMock()
-        router_result.data = refuse_decision
+    async def test_run_converts_output_to_string(self, engine: WorkflowEngine) -> None:
+        mock_result = MagicMock()
+        mock_result.output = 42  # non-string output
 
-        mock_router_agent = MagicMock()
-        mock_router_agent.run = AsyncMock(return_value=router_result)
-
-        with patch("app.agent.engines.router.Agent", return_value=mock_router_agent):
-            result = await engine.run(
-                user_id=uuid4(),
-                message="What is the capital of France?",
-                history=[],
-            )
-
-        assert result == get_guardrails_refusal_msg()
-
-    async def test_router_failure_defaults_to_answer(self, engine: WorkflowEngine) -> None:
-        """When router raises, the pipeline falls through to reasoning."""
-        mock_router_agent = MagicMock()
-        mock_router_agent.run = AsyncMock(side_effect=Exception("LLM timeout"))
-
-        reasoning_result = MagicMock()
-        reasoning_result.data = "Reasoning response"
-
-        guardrails_result = MagicMock()
-        guardrails_result.data = "Final response"
-
-        mock_reasoning_agent = MagicMock()
-        mock_reasoning_agent.run = AsyncMock(side_effect=[reasoning_result, guardrails_result])
-
-        with (
-            patch("app.agent.engines.router.Agent", return_value=mock_router_agent),
-            patch("app.agent.engines.reasoning.Agent", return_value=mock_reasoning_agent),
-            patch("app.agent.engines.guardrails.Agent", return_value=mock_reasoning_agent),
+        with patch(
+            "app.agent.workflows.agent_workflow.user_assistant_graph.run",
+            AsyncMock(return_value=mock_result),
         ):
-            result = await engine.run(
-                user_id=uuid4(),
-                message="How many steps did I walk?",
-                history=[],
-            )
+            result = await engine.run(user_id=uuid4(), message="Test", history=[])
 
-        assert result == "Final response"
+        assert result == "42"
+        assert isinstance(result, str)
 
-    async def test_guardrails_failure_returns_raw_reasoning_output(
-        self, engine: WorkflowEngine, answer_decision: MagicMock
-    ) -> None:
-        router_result = MagicMock()
-        router_result.data = answer_decision
+    async def test_run_passes_message_with_user_id_prefix(self, engine: WorkflowEngine) -> None:
+        user_id = uuid4()
+        mock_result = MagicMock()
+        mock_result.output = "OK"
+        graph_run = AsyncMock(return_value=mock_result)
 
-        reasoning_result = MagicMock()
-        reasoning_result.data = "Raw reasoning output"
+        with patch("app.agent.workflows.agent_workflow.user_assistant_graph.run", graph_run):
+            await engine.run(user_id=user_id, message="My message", history=[])
 
-        mock_router_agent = MagicMock()
-        mock_router_agent.run = AsyncMock(return_value=router_result)
+        call_kwargs = graph_run.call_args.kwargs
+        deps = call_kwargs["deps"]
+        assert f"[user_id={user_id}]" in deps["message"]
+        assert "My message" in deps["message"]
 
-        mock_reasoning_agent = MagicMock()
-        mock_reasoning_agent.run = AsyncMock(return_value=reasoning_result)
-
-        mock_guardrails_agent = MagicMock()
-        mock_guardrails_agent.run = AsyncMock(side_effect=Exception("guardrails down"))
-
-        with (
-            patch("app.agent.engines.router.Agent", return_value=mock_router_agent),
-            patch("app.agent.engines.reasoning.Agent", return_value=mock_reasoning_agent),
-            patch("app.agent.engines.guardrails.Agent", return_value=mock_guardrails_agent),
-        ):
-            result = await engine.run(
-                user_id=uuid4(),
-                message="Test message",
-                history=[],
-            )
-
-        assert result == "Raw reasoning output"
-
-    async def test_reasoning_failure_raises(self, engine: WorkflowEngine, answer_decision: MagicMock) -> None:
-        router_result = MagicMock()
-        router_result.data = answer_decision
-
-        mock_router_agent = MagicMock()
-        mock_router_agent.run = AsyncMock(return_value=router_result)
-
-        mock_reasoning_agent = MagicMock()
-        mock_reasoning_agent.run = AsyncMock(side_effect=RuntimeError("API error"))
-
-        with (
-            patch("app.agent.engines.router.Agent", return_value=mock_router_agent),
-            patch("app.agent.engines.reasoning.Agent", return_value=mock_reasoning_agent),
-            pytest.raises(RuntimeError, match="API error"),
-        ):
-            await engine.run(
-                user_id=uuid4(),
-                message="Test",
-                history=[],
-            )
-
-    async def test_history_is_passed_to_reasoning_agent(
-        self, engine: WorkflowEngine, answer_decision: MagicMock
-    ) -> None:
-        router_result = MagicMock()
-        router_result.data = answer_decision
-
-        reasoning_result = MagicMock()
-        reasoning_result.data = "Answer"
-
-        guardrails_result = MagicMock()
-        guardrails_result.data = "Polished"
-
-        mock_router_agent = MagicMock()
-        mock_router_agent.run = AsyncMock(return_value=router_result)
-
-        mock_reasoning_agent = MagicMock()
-        mock_reasoning_agent.run = AsyncMock(side_effect=[reasoning_result, guardrails_result])
+    async def test_run_passes_chat_history_to_graph(self, engine: WorkflowEngine) -> None:
+        mock_result = MagicMock()
+        mock_result.output = "OK"
+        graph_run = AsyncMock(return_value=mock_result)
 
         history = [
             {"role": "user", "content": "Previous question"},
             {"role": "assistant", "content": "Previous answer"},
         ]
 
-        with (
-            patch("app.agent.engines.router.Agent", return_value=mock_router_agent),
-            patch("app.agent.engines.reasoning.Agent", return_value=mock_reasoning_agent),
-            patch("app.agent.engines.guardrails.Agent", return_value=mock_reasoning_agent),
-        ):
-            await engine.run(
-                user_id=uuid4(),
-                message="Follow-up question",
-                history=history,
-            )
+        with patch("app.agent.workflows.agent_workflow.user_assistant_graph.run", graph_run):
+            await engine.run(user_id=uuid4(), message="Follow-up", history=history)
 
-        reasoning_call = mock_reasoning_agent.run.call_args_list[0]
-        assert "message_history" in reasoning_call.kwargs
+        deps = graph_run.call_args.kwargs["deps"]
+        assert "chat_history" in deps
+        assert len(deps["chat_history"]) == 1  # only user turn seeded
+
+    async def test_run_passes_agent_router_guardrails_in_deps(self, engine: WorkflowEngine) -> None:
+        mock_result = MagicMock()
+        mock_result.output = "OK"
+        graph_run = AsyncMock(return_value=mock_result)
+
+        with patch("app.agent.workflows.agent_workflow.user_assistant_graph.run", graph_run):
+            await engine.run(user_id=uuid4(), message="Test", history=[])
+
+        deps = graph_run.call_args.kwargs["deps"]
+        assert "agent" in deps
+        assert "router" in deps
+        assert "guardrails" in deps
+
+    async def test_run_passes_language_in_deps(self, engine: WorkflowEngine) -> None:
+        from app.schemas.language import Language
+
+        mock_result = MagicMock()
+        mock_result.output = "OK"
+        graph_run = AsyncMock(return_value=mock_result)
+
+        with patch("app.agent.workflows.agent_workflow.user_assistant_graph.run", graph_run):
+            await engine.run(user_id=uuid4(), message="Test", history=[], language=Language.english)
+
+        deps = graph_run.call_args.kwargs["deps"]
+        assert "language" in deps
+        assert deps["language"] == "english"
 
 
 class TestWorkflowEngineSummarize:
     async def test_returns_summary_string(self, engine: WorkflowEngine) -> None:
         summary_result = MagicMock()
-        summary_result.data = "Summary of the conversation."
+        summary_result.output = "Summary of the conversation."
 
         mock_summarizer = MagicMock()
         mock_summarizer.run = AsyncMock(return_value=summary_result)
 
-        with patch("app.agent.workflows.agent_workflow.Agent", return_value=mock_summarizer):
+        with patch("pydantic_ai.Agent", return_value=mock_summarizer):
             result = await engine.summarize(
                 [
                     {"role": "user", "content": "How many steps?"},
@@ -214,7 +151,7 @@ class TestWorkflowEngineSummarize:
 
     async def test_formats_transcript_correctly(self, engine: WorkflowEngine) -> None:
         summary_result = MagicMock()
-        summary_result.data = "OK"
+        summary_result.output = "OK"
 
         mock_summarizer = MagicMock()
         mock_summarizer.run = AsyncMock(return_value=summary_result)
@@ -224,7 +161,7 @@ class TestWorkflowEngineSummarize:
             {"role": "assistant", "content": "Hi there"},
         ]
 
-        with patch("app.agent.workflows.agent_workflow.Agent", return_value=mock_summarizer):
+        with patch("pydantic_ai.Agent", return_value=mock_summarizer):
             await engine.summarize(messages)
 
         prompt = mock_summarizer.run.call_args[0][0]

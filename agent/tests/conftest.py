@@ -221,29 +221,38 @@ def mock_celery(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     mock_task.delay.return_value = MagicMock(id="test-task-id")
     mock_task.apply_async.return_value = MagicMock(id="test-task-id")
 
-    with patch("app.integrations.celery.tasks.process_message.process_message", mock_task):
+    with (
+        patch("app.integrations.celery.tasks.process_message.process_message", mock_task),
+        patch("app.api.routes.v1.chat.process_message", mock_task),
+    ):
         yield mock_task
 
 
 @pytest.fixture(autouse=True)
 def mock_llm() -> Generator[dict[str, MagicMock], None, None]:
-    """Mock all pydantic-ai Agent.run calls to avoid real LLM calls."""
+    """Mock pygentic-ai graph and pydantic-ai Agent to avoid real LLM calls."""
     mock_run_result = MagicMock()
-    mock_run_result.data = "This is a test assistant response."
+    mock_run_result.output = "This is a test assistant response."
 
-    mock_agent = MagicMock()
-    mock_agent.run = AsyncMock(return_value=mock_run_result)
+    mock_graph_run = AsyncMock(return_value=mock_run_result)
+
+    mock_pydantic_agent = MagicMock()
+    mock_pydantic_agent.run = AsyncMock(return_value=mock_run_result)
 
     with (
-        patch("app.agent.engines.reasoning.Agent", return_value=mock_agent) as mock_reasoning,
-        patch("app.agent.engines.router.Agent", return_value=mock_agent) as mock_router,
-        patch("app.agent.engines.guardrails.Agent", return_value=mock_agent) as mock_guardrails,
+        patch(
+            "app.agent.workflows.agent_workflow.user_assistant_graph.run",
+            mock_graph_run,
+        ) as mock_graph,
+        patch(
+            "pydantic_ai.Agent",
+            return_value=mock_pydantic_agent,
+        ) as mock_summarizer,
     ):
         yield {
-            "agent": mock_agent,
-            "reasoning": mock_reasoning,
-            "router": mock_router,
-            "guardrails": mock_guardrails,
+            "agent": mock_pydantic_agent,
+            "graph_run": mock_graph,
+            "summarizer": mock_summarizer,
             "run_result": mock_run_result,
         }
 
