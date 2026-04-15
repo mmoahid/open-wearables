@@ -127,6 +127,9 @@ def build_worker_prompt(
     else:
         lang_name = language or LANGUAGE_NAMES[Language.english]
 
+    if soft_word_limit is not None and soft_word_limit <= 0:
+        raise ValueError("soft_word_limit must be greater than 0")
+
     if soft_word_limit is None:
         length_section = _GUARDRAILS_NO_LENGTH_SECTION
     else:

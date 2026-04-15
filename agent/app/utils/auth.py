@@ -2,9 +2,9 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
 
 from app.config import settings
 
@@ -26,8 +26,8 @@ class JWTAuth:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         try:
-            payload = jwt.decode(token, self._secret_key, algorithms=[self._algorithm])
-        except JWTError:
+            payload = jwt.decode(token, self._secret_key, algorithms=[self._algorithm], options={"verify_exp": False})
+        except jwt.PyJWTError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",

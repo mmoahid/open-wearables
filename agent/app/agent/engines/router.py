@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pygentic_ai.engines.routers import GenericRouter, RoutingResponse
 
@@ -37,7 +39,7 @@ class HealthRouter(GenericRouter):
             language=language,
         )
 
-    async def route(self, message: str, **kwargs) -> RoutingResponse:  # type: ignore[override]
+    async def route(self, message: str, **kwargs: Any) -> RoutingResponse:  # type: ignore[override]
         """Route *message*, optionally enriched with recent conversation context."""
         if not self._history:
             return await super().route(message, **kwargs)

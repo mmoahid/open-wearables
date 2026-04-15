@@ -52,7 +52,7 @@ async def _run(
         history: list[dict] = []
         if conversation is not None:
             try:
-                history = await service.build_history(conversation, db)
+                history = await service.build_history(conversation)
             except Exception:
                 logger.exception("Failed to build history — proceeding with empty history")
 

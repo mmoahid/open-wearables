@@ -7,7 +7,7 @@ from sqlalchemy import text
 
 from app.agent.utils.model_utils import get_llm
 from app.config import settings
-from app.database import DbSession, engine
+from app.database import AsyncDbSession, engine
 
 healthcheck_router = APIRouter()
 
@@ -24,11 +24,11 @@ def get_pool_status() -> dict[str, str]:
 
 
 @healthcheck_router.get("/db")
-async def database_health(db: DbSession) -> dict[str, str | dict[str, str]]:
+async def database_health(db: AsyncDbSession) -> dict[str, str | dict[str, str]]:
     """Database health check endpoint."""
     try:
         # Test connection
-        db.execute(text("SELECT 1"))
+        await db.execute(text("SELECT 1"))
 
         pool_status = get_pool_status()
         return {

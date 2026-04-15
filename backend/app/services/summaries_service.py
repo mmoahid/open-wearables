@@ -400,6 +400,7 @@ class SummariesService:
         all_dates = sorted(set(vitals_by_date) | set(sleep_by_date))
 
         # Cursor-based pagination: skip dates before/at the cursor date
+        prev_page = False
         if cursor:
             try:
                 cursor_dt, _, direction = decode_cursor(cursor)
@@ -407,6 +408,7 @@ class SummariesService:
                 if direction == "prev":
                     all_dates = [d for d in all_dates if d < cursor_date]
                     all_dates = list(reversed(all_dates))
+                    prev_page = True
                 else:
                     all_dates = [d for d in all_dates if d > cursor_date]
             except Exception:
@@ -415,6 +417,8 @@ class SummariesService:
         has_more = len(all_dates) > limit
         if has_more:
             all_dates = all_dates[:limit]
+        if prev_page:
+            all_dates = list(reversed(all_dates))
 
         next_cursor: str | None = None
         previous_cursor: str | None = None

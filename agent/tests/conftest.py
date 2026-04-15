@@ -29,10 +29,10 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test-key")
 os.environ.setdefault("CELERY_BROKER_URL", "memory://")
 os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
 
+import jwt
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
-from jose import jwt
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -109,11 +109,17 @@ def event_loop_policy() -> asyncio.AbstractEventLoopPolicy:
 @pytest_asyncio.fixture(scope="session")
 async def _create_schema(async_engine: Any) -> AsyncGenerator[None, None]:
     """Create all tables once per session."""
+    from sqlalchemy import text
+
     async with async_engine.begin() as conn:
+        # MessageRole uses create_type=False so metadata.create_all won't create the PG enum;
+        # we must create it explicitly before creating the tables.
+        await conn.execute(text("CREATE TYPE IF NOT EXISTS messagrole AS ENUM ('user', 'assistant')"))
         await conn.run_sync(BaseDbModel.metadata.create_all)
     yield
     async with async_engine.begin() as conn:
         await conn.run_sync(BaseDbModel.metadata.drop_all)
+        await conn.execute(text("DROP TYPE IF EXISTS messagrole"))
 
 
 @pytest_asyncio.fixture
