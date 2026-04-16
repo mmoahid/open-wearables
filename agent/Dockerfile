@@ -36,7 +36,7 @@ FROM python:3.13-slim
     ENV PATH="/opt/venv/bin:$PATH"
     ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 
-    RUN groupadd -r appuser && useradd -r -g appuser appuser && \
+    RUN groupadd -r appuser && useradd -r -g appuser -m appuser && \
         chown -R appuser:appuser /root_project /opt/venv
     USER appuser
 
