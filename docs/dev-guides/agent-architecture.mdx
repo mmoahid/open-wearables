@@ -38,10 +38,10 @@ You need:
 ### Environment variables
 
 ```bash
-# Database
+# Database (agent has its own DB, separate from the backend)
 DB_HOST=localhost
 DB_PORT=5432
-DB_NAME=open-wearables
+DB_NAME=agent
 DB_USER=open-wearables
 DB_PASSWORD=open-wearables
 
@@ -72,9 +72,24 @@ OW_API_KEY=sk-your-ow-api-key
 ```bash
 cd agent
 uv sync
-uv run fastapi dev app/main.py          # API server
-uv run celery -A app.main.celery_app worker -l info  # Worker
+uv run fastapi dev app/main.py --host 0.0.0.0 --port 8001  # API server on port 8001
+uv run celery -A app.main:celery_app worker -l info         # Worker
+uv run celery -A app.main:celery_app beat -l info           # Beat scheduler
 ```
+
+### Running via Docker Compose
+
+The agent is opt-in via the `agent` profile. The backend must be healthy before starting the agent.
+
+```bash
+# Start the backend first
+docker compose up -d
+
+# Then start the agent services (3 containers)
+docker compose --profile agent up -d
+```
+
+The agent API is exposed on **port 8001** (`http://localhost:8001`). Inside Docker, `OW_API_URL` should remain `http://app:8000` — the Compose network resolves `app` to the backend container.
 
 ---
 
@@ -213,9 +228,12 @@ The `HealthRouter` classifies every incoming message before any data is fetched.
 | Route | Meaning | Example |
 |-------|---------|---------|
 | `1` | Answer — fetch data, reason, respond | "What was my resting HR yesterday?" |
+| `1` | Answer — cross-user query | "How is Alice sleeping? Compare Bob and Alice." |
 | `2` | Refuse — send a polite refusal | "Diagnose my chest pain" |
 
 Messages that route to `2` bypass the reasoning agent entirely and return a localised refusal string without consuming tool calls.
+
+Cross-user health queries (looking up another platform user by name or UUID to compare data) are explicitly classified as route=1. The router prompt includes this as an ANSWER case so these messages reach the reasoning agent and its `lookup_user` tool.
 
 ### Stage 2 — Reasoning agent
 
@@ -258,20 +276,34 @@ Adding a new mode means adding an entry to `_MODE_MAPPING` in `app/agent/tools/t
 
 ### OW Data tools
 
-These tools call the Open Wearables backend API. All are `async` functions. `user_id` is injected from `RunContext[HealthAgentDeps]` — the model does not pass it.
+These tools call the Open Wearables backend API. All are `async` functions. `user_id` is resolved from `RunContext[HealthAgentDeps]` unless `target_user_id` is explicitly provided — the model does not need to know the user's UUID for the logged-in user.
 
 Every tool catches all exceptions and returns a human-readable error string so the reasoning loop always receives a response.
 
 | Tool | Purpose | Key parameters |
 |------|---------|----------------|
-| `get_user_profile` | Name, email, birth date, sex, gender | — |
-| `get_body_composition` | Weight, height, BMI, body fat, muscle mass, resting HR, HRV | — |
-| `get_recent_activity` | Daily steps, distance, calories, active minutes, floors | `days` (1–30, default 7) |
-| `get_recent_sleep` | Duration, efficiency, sleep stages, avg HR, HRV, SpO2 | `days` (1–30, default 7) |
-| `get_recovery_data` | Resting HR, HRV SDNN, SpO2, sleep efficiency | `days` (1–30, default 7) |
-| `get_workouts` | Type, duration, calories, HR stats per session | `days` (1–60, default 14) |
-| `get_sleep_events` | Granular stage intervals and timing per sleep session | `days` (1–14, default 7) |
-| `get_heart_rate_timeseries` | HR time-series at 1-hour resolution | `hours` (1–168, default 24) |
+| `lookup_user` | Search platform users by name or email fragment; returns UUIDs | `name` (string) |
+| `get_user_profile` | Name, email, birth date, sex, gender | `target_user_id` (optional UUID) |
+| `get_body_composition` | Weight, height, BMI, body fat, muscle mass, resting HR, HRV | `target_user_id` (optional UUID) |
+| `get_recent_activity` | Daily steps, distance, calories, active minutes, floors | `days` (1–30, default 7), `target_user_id` |
+| `get_recent_sleep` | Duration, efficiency, sleep stages, avg HR, HRV, SpO2 | `days` (1–30, default 7), `target_user_id` |
+| `get_recovery_data` | Resting HR, HRV SDNN, SpO2, sleep efficiency | `days` (1–30, default 7), `target_user_id` |
+| `get_workouts` | Type, duration, calories, HR stats per session | `days` (1–60, default 14), `target_user_id` |
+| `get_sleep_events` | Granular stage intervals and timing per sleep session | `days` (1–14, default 7), `target_user_id` |
+| `get_heart_rate_timeseries` | HR time-series at 1-hour resolution | `hours` (1–168, default 24), `target_user_id` |
+
+**`target_user_id`** is available on every data tool. When `None` (default) the tool queries the logged-in user. Pass a UUID returned by `lookup_user` to query any other platform user.
+
+**Cross-user query pattern:**
+
+```
+User: "Compare my sleep with Alice's."
+
+1. lookup_user("Alice")                          → UUID: abc-123
+2. get_recent_sleep(days=7)                      → logged-in user's sleep (no target_user_id)
+3. get_recent_sleep(days=7, target_user_id=abc-123) → Alice's sleep
+→ Side-by-side comparison synthesised from both results
+```
 
 <Tip>
 Use `get_recent_sleep` for daily summaries (efficiency, stage totals). Use `get_sleep_events` when the user asks about a specific night or stage-by-stage breakdown.
@@ -338,8 +370,8 @@ The agent supports Anthropic, OpenAI, and Google AI through a provider abstracti
     LLM_PROVIDER=openai
     OPENAI_API_KEY=sk-...
     # Defaults if not set:
-    # LLM_MODEL=gpt-4o
-    # LLM_MODEL_WORKERS=gpt-4o-mini
+    # LLM_MODEL=gpt-5
+    # LLM_MODEL_WORKERS=gpt-5-mini
     ```
   </Tab>
   <Tab title="Google">
@@ -347,8 +379,8 @@ The agent supports Anthropic, OpenAI, and Google AI through a provider abstracti
     LLM_PROVIDER=google
     GOOGLE_API_KEY=...
     # Defaults if not set:
-    # LLM_MODEL=gemini-1.5-pro
-    # LLM_MODEL_WORKERS=gemini-1.5-flash
+    # LLM_MODEL=gemini-2.0-flash
+    # LLM_MODEL_WORKERS=gemini-2.0-flash-lite
     ```
   </Tab>
 </Tabs>
@@ -429,7 +461,7 @@ All settings are loaded from environment variables via `pydantic-settings`. The 
     | `ALGORITHM` | `HS256` | JWT algorithm |
     | `DB_HOST` | `db` | PostgreSQL hostname |
     | `DB_PORT` | `5432` | PostgreSQL port |
-    | `DB_NAME` | `open-wearables` | Database name |
+    | `DB_NAME` | `agent` | Database name (agent has its own DB separate from the backend) |
     | `DB_USER` | `open-wearables` | Database user |
     | `DB_PASSWORD` | `open-wearables` | Database password |
     | `OW_API_URL` | `http://app:8000` | Open Wearables backend URL |
@@ -453,7 +485,16 @@ All settings are loaded from environment variables via `pydantic-settings`. The 
 
 ## Running the tests
 
-The test suite requires Docker (for PostgreSQL via testcontainers) or a running PostgreSQL instance.
+Tests are split into two tiers with different infrastructure requirements.
+
+**Agent unit tests** (`tests/agent/`) — all I/O mocked, no database needed:
+
+```bash
+cd agent
+uv run pytest tests/agent/ -v
+```
+
+**Full suite** — requires PostgreSQL (via testcontainers or `TEST_DATABASE_URL`):
 
 ```bash
 cd agent
@@ -461,12 +502,9 @@ cd agent
 # Using testcontainers (Docker must be running)
 uv run pytest -v
 
-# Using an existing Postgres instance
-TEST_DATABASE_URL=postgresql+psycopg://user:pass@localhost:5432/agent_test \
+# Using an existing Postgres instance (faster, no Docker needed)
+TEST_DATABASE_URL=postgresql+psycopg://open-wearables:open-wearables@localhost:5432/agent_test \
     uv run pytest -v
-
-# Run only the agent unit tests (no DB needed — pure computation)
-uv run pytest tests/agent/test_stats_tools.py -v
 
 # Coverage report
 uv run pytest --cov=app --cov-report=term-missing
@@ -476,9 +514,10 @@ Key fixture behaviour (defined in `tests/conftest.py`):
 
 - Each test gets a fresh async session wrapped in a savepoint. The outer transaction is rolled back after the test — no data persists between tests.
 - Celery, the LLM graph, and the OW HTTP client are mocked globally (autouse). Tests do not make real API calls or queue real tasks.
+- `tests/agent/conftest.py` overrides the autouse DB fixture for the `tests/agent/` subtree so those unit tests never attempt a database connection.
 
 <Tip>
-The stats tools and date tools tests (`test_stats_tools.py`, parts of `test_tools.py`) are pure unit tests. They pass even without Docker because they don't touch the database. Run them first to quickly verify logic changes.
+Run `uv run pytest tests/agent/ -v` first — it covers all tools, routing logic, and the workflow engine without any infrastructure. If those pass you can be confident the core reasoning pipeline is correct before spinning up Postgres.
 </Tip>
 
 ### Test coverage by area
@@ -486,7 +525,7 @@ The stats tools and date tools tests (`test_stats_tools.py`, parts of `test_tool
 | File | What it covers |
 |------|----------------|
 | `tests/agent/test_stats_tools.py` | `calculate_mean`, `calculate_stdev`, `calculate_trend`, `detect_seasonality` — edge cases and output format |
-| `tests/agent/test_tools.py` | All OW data tools — mocked `ow_client`, error handling |
+| `tests/agent/test_tools.py` | All OW data tools — `lookup_user`, `target_user_id` routing, clamping, error handling |
 | `tests/agent/test_tool_registry.py` | `ToolManager.get_tools_for_mode()` for all agent modes |
 | `tests/agent/test_workflow.py` | `WorkflowEngine.run()` pipeline, history conversion, mock graph |
 | `tests/api/v1/test_chat.py` | `POST /chat` — task queuing, auth, conversation ownership |
@@ -502,7 +541,7 @@ The stats tools and date tools tests (`test_stats_tools.py`, parts of `test_tool
 ### Adding a new tool
 
 1. Create or add a function to a file in `app/agent/tools/`.
-2. For tools that need user context: make it `async`, accept `ctx: RunContext[HealthAgentDeps]` as the first argument, and extract `user_id` via `_require_user_id(ctx)`.
+2. For tools that call the OW backend: make it `async`, accept `ctx: RunContext[HealthAgentDeps]` as the first argument. Resolve the target user with `_resolve_user_id(ctx, target_user_id)` — this falls back to the logged-in user when `target_user_id` is `None`, or raises if neither is available. Add `target_user_id: UUID | None = None` as a parameter so the model can query other users.
 3. For pure-computation tools: make it a plain `def`, accept primitives only, return `str`.
 4. Add the function to the module's `*_TOOLS: list` constant.
 5. If it's a new toolpack, add a `Toolpack` entry and wire it in `_MODE_MAPPING` in `tool_registry.py`.
