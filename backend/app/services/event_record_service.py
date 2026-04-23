@@ -43,7 +43,7 @@ from app.schemas.utils import (
     SourceMetadata as DataSourceSchema,
 )
 from app.services.outgoing_webhooks import svix as svix_service
-from app.services.outgoing_webhooks.events import on_activity_created, on_sleep_created, on_workout_created
+from app.services.outgoing_webhooks.events import on_sleep_created, on_workout_created
 from app.services.scores.sleep_service import sleep_score_service
 from app.services.services import AppService
 from app.utils.exceptions import handle_exceptions
