@@ -157,16 +157,12 @@ class OuraWebhookHandler(BaseWebhookHandler):
         Oura sends ``?verification_token=...&challenge=...`` when a subscription
         is created. We verify the token and echo the challenge back.
         """
-        expected_setting = settings.oura_webhook_verification_token
-        expected = expected_setting.get_secret_value() if expected_setting else None
+        expected = settings.oura_webhook_verification_token.get_secret_value()
 
         verification_token = request.query_params.get("verification_token")
         challenge = request.query_params.get("challenge", "")
 
-        if not expected or not verification_token:
-            raise HTTPException(status_code=401, detail="Invalid verification token")
-
-        if not self._verify_token(expected, verification_token):
+        if not verification_token or not self._verify_token(expected, verification_token):
             raise HTTPException(status_code=401, detail="Invalid verification token")
 
         return {"challenge": challenge}
