@@ -36,7 +36,7 @@ async def upsert_webhook_subscriptions(
     (cover all authorized users).
     """
     try:
-        results = await oura_webhook_service.upsert_subscriptions(callback_url)
+        results = await oura_webhook_service.register_subscriptions(callback_url)
         return {"subscriptions": results}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

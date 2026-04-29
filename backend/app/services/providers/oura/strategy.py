@@ -2,6 +2,7 @@ from app.services.providers.base_strategy import BaseProviderStrategy, ProviderC
 from app.services.providers.oura.data_247 import Oura247Data
 from app.services.providers.oura.oauth import OuraOAuth
 from app.services.providers.oura.webhook_handler import OuraWebhookHandler
+from app.services.providers.oura.webhook_service import oura_webhook_service
 from app.services.providers.oura.workouts import OuraWorkouts
 
 
@@ -52,4 +53,7 @@ class OuraStrategy(BaseProviderStrategy):
 
     @property
     def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(rest_pull=True, webhook_ping=True)
+        return ProviderCapabilities(rest_pull=True, webhook_ping=True, webhook_registration_api=True)
+
+    async def register_webhooks(self, callback_url: str) -> list[dict]:
+        return await oura_webhook_service.register_subscriptions(callback_url)

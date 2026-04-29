@@ -27,19 +27,24 @@ OURA_WEBHOOK_DATA_TYPES = [
     "daily_readiness",
     "daily_activity",
     "daily_spo2",
+    "daily_cardiovascular_age",
+    "vo2_max",
     # types below for debug
     "sleep_time",
+    "rest_mode_period",
+    "ring_configuration",
     "daily_stress",
     "daily_cycle_phases",
     "activation_status",
-    "daily_cardiovascular_age",
     "daily_resilience",
-    "vo2_max",
     "period_start",
     "pregnancy",
     "fertile_window",
     "ovulation_confirmed",
     "blood_glucose",
+    "tag",
+    "enhanced_tag",
+    "session",
 ]
 
 OURA_WEBHOOK_EVENT_TYPES = ["create", "update"]
@@ -64,14 +69,14 @@ class OuraWebhookService:
             "x-client-secret": client_secret,
         }
 
-    async def upsert_subscriptions(
+    async def register_subscriptions(
         self,
         callback_url: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Upsert Oura webhook subscriptions for all supported data types.
+        """Register missing Oura webhook subscriptions for all supported data types.
 
-        GETs existing subscriptions first, then PUTs to update ones that exist
-        or POSTs to create missing ones. Safe to call multiple times.
+        GETs existing subscriptions first and skips ones already registered.
+        Safe to call multiple times.
         """
         if not callback_url:
             raise ValueError("callback_url is required to upsert webhook subscriptions")
@@ -105,7 +110,10 @@ class OuraWebhookService:
                 raise
 
             for data_type, event_type in itertools.product(OURA_WEBHOOK_DATA_TYPES, OURA_WEBHOOK_EVENT_TYPES):
-                sub_id = existing.get((data_type, event_type))
+                if (data_type, event_type) in existing:
+                    results.append({"data_type": data_type, "event_type": event_type, "status": "skipped"})
+                    continue
+
                 body = {
                     "callback_url": callback_url,
                     "verification_token": verification_token,
@@ -114,49 +122,41 @@ class OuraWebhookService:
                 }
 
                 try:
-                    if sub_id:
-                        response = await client.put(
-                            f"{OURA_WEBHOOK_API_URL}/{sub_id}",
-                            headers=headers,
-                            json=body,
-                            timeout=30.0,
-                        )
-                        action = "updated"
-                    else:
-                        response = await client.post(
-                            OURA_WEBHOOK_API_URL,
-                            headers=headers,
-                            json=body,
-                            timeout=30.0,
-                        )
-                        action = "created"
-
+                    response = await client.post(
+                        OURA_WEBHOOK_API_URL,
+                        headers=headers,
+                        json=body,
+                        timeout=30.0,
+                    )
                     response.raise_for_status()
-                    results.append({
-                        "data_type": data_type,
-                        "event_type": event_type,
-                        "status": action,
-                        "response": response.json(),
-                    })
+                    results.append(
+                        {
+                            "data_type": data_type,
+                            "event_type": event_type,
+                            "status": "created",
+                            "response": response.json(),
+                        }
+                    )
                 except httpx.HTTPError as e:
                     log_structured(
                         logger,
                         "error",
-                        "Failed to upsert Oura webhook subscription",
+                        "Failed to register Oura webhook subscription",
                         provider="oura",
-                        action="oura_webhook_subscription_upsert_error",
+                        action="oura_webhook_subscription_register_error",
                         data_type=data_type,
                         event_type=event_type,
-                        subscription_id=sub_id,
                         error=str(e),
                         status_code=e.response.status_code if isinstance(e, httpx.HTTPStatusError) else None,
                     )
-                    results.append({
-                        "data_type": data_type,
-                        "event_type": event_type,
-                        "status": "error",
-                        "error": str(e),
-                    })
+                    results.append(
+                        {
+                            "data_type": data_type,
+                            "event_type": event_type,
+                            "status": "error",
+                            "error": str(e),
+                        }
+                    )
 
         return results
 

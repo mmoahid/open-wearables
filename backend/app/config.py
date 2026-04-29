@@ -201,7 +201,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def derive_oura_webhook_verification_token(self) -> "Settings":
-        if self.oura_webhook_verification_token is None or self.oura_webhook_verification_token.get_secret_value() == "":
+        if (
+            self.oura_webhook_verification_token is None
+            or self.oura_webhook_verification_token.get_secret_value() == ""
+        ):
             self.oura_webhook_verification_token = SecretStr(self.secret_key)
         return self
 

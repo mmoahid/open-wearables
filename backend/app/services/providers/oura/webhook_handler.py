@@ -1,8 +1,8 @@
 """Oura webhook handler.
 
 Oura sends notify-only webhooks: a lightweight payload containing the user ID,
-data type, and event type. The actual data must be fetched via the REST API
-using the ``data_timestamp`` field to determine the date window.
+data type, event type, and object_id of the changed resource. The actual data
+is fetched via GET /v2/usercollection/{data_type}/{object_id}.
 
 Signature scheme
 ----------------
@@ -30,7 +30,6 @@ See: https://cloud.ouraring.com/v2/docs#tag/Webhook-Subscription-Routes
 
 import json
 import logging
-from datetime import timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -46,7 +45,6 @@ from app.services.providers.oura.data_247 import Oura247Data
 from app.services.providers.oura.workouts import OuraWorkouts
 from app.services.providers.templates.base_webhook_handler import BaseWebhookHandler
 from app.services.raw_payload_storage import store_raw_payload
-from app.utils.dates import parse_webhook_data_timestamp
 from app.utils.structured_logging import log_structured
 
 logger = logging.getLogger(__name__)
@@ -54,13 +52,14 @@ logger = logging.getLogger(__name__)
 _PROCESS_PUSH_TASK = "app.integrations.celery.tasks.webhook_push_task.process_webhook_push"
 
 SUPPORTED_DATA_TYPES = [
-    "workout",
-    "sleep",
-    "daily_sleep",
-    "daily_readiness",
-    "daily_activity",
-    "daily_spo2",
+    "workout", "sleep", "daily_sleep", "daily_readiness",
+    "daily_activity", "daily_spo2", "daily_cardiovascular_age", "vo2_max",
 ]
+
+# Oura webhook data_type → REST collection name (only entries that differ)
+_COLLECTION_NAME: dict[str, str] = {
+    "vo2_max": "vO2_max",
+}
 
 
 class OuraWebhookHandler(BaseWebhookHandler):
@@ -206,13 +205,13 @@ class OuraWebhookHandler(BaseWebhookHandler):
                 oura_user_id=notification.user_id,
                 data_type=notification.data_type,
             )
-            return {"status": "user_not_found", "oura_user_id": notification.user_id, "data_type": notification.data_type}
+            return {
+                "status": "user_not_found",
+                "oura_user_id": notification.user_id,
+                "data_type": notification.data_type,
+            }
 
         user_id: UUID = connection.user_id
-
-        data_date = parse_webhook_data_timestamp(notification.data_timestamp)
-        start_time = data_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_time = start_time + timedelta(days=1)
 
         log_structured(
             logger,
@@ -224,9 +223,10 @@ class OuraWebhookHandler(BaseWebhookHandler):
             oura_user_id=notification.user_id,
             data_type=notification.data_type,
             event_type=notification.event_type,
+            object_id=notification.object_id,
         )
 
-        count = self._dispatch_data_type(db, notification, user_id, start_time, end_time)
+        count = self._dispatch_data_type(db, notification, user_id)
 
         if count is None:
             log_structured(
@@ -267,39 +267,39 @@ class OuraWebhookHandler(BaseWebhookHandler):
         db: DbSession,
         notification: OuraWebhookNotification,
         user_id: UUID,
-        start_time: Any,
-        end_time: Any,
     ) -> int | None:
-        if notification.data_type in ("sleep", "daily_sleep"):
-            return self.data_247.save_sleep_data(
-                db,
-                user_id,
-                self.data_247.normalize_sleeps(
-                    self.data_247.get_sleep_data(db, user_id, start_time, end_time),
-                    user_id,
-                ),
-            )
+        data_type = notification.data_type
+        object_id = notification.object_id
 
-        if notification.data_type == "daily_readiness":
-            return self.data_247.save_readiness_data(
-                db,
-                user_id,
-                self.data_247.normalize_readiness(
-                    self.data_247.get_readiness_data(db, user_id, start_time, end_time),
-                    user_id,
-                ),
-            )
+        if not object_id:
+            return None
 
-        if notification.data_type == "daily_activity":
-            raw = self.data_247.get_activity_samples(db, user_id, start_time, end_time)
-            normalized = self.data_247.normalize_activity_samples(raw, user_id)
-            return self.data_247.save_activity_data(db, user_id, normalized)
+        if data_type == "workout":
+            return self.workouts.save_by_id(db, user_id, object_id)
 
-        if notification.data_type == "daily_spo2":
-            raw = self.data_247.get_spo2_data(db, user_id, start_time, end_time)
-            return self.data_247.save_spo2_data(db, user_id, raw)
+        collection = _COLLECTION_NAME.get(data_type, data_type)
+        raw = self.data_247._make_api_request(db, user_id, f"/v2/usercollection/{collection}/{object_id}")
+        if not raw or not isinstance(raw, dict):
+            return 0
 
-        if notification.data_type == "workout":
-            return self.workouts.load_data(db, user_id, start_date=start_time, end_date=end_time)
+        docs = [raw]
 
-        return None
+        match data_type:
+            case "sleep" | "daily_sleep":
+                return self.data_247.save_sleep_data(db, user_id, self.data_247.normalize_sleeps(docs, user_id))
+            case "daily_readiness":
+                return self.data_247.save_readiness_data(db, user_id, self.data_247.normalize_readiness(docs, user_id))
+            case "daily_activity":
+                return self.data_247.save_activity_data(
+                    db, user_id, self.data_247.normalize_activity_samples(docs, user_id)
+                )
+            case "daily_spo2":
+                return self.data_247.save_spo2_data(db, user_id, docs)
+            case "daily_cardiovascular_age":
+                return self.data_247.save_cardiovascular_age_data(
+                    db, user_id, self.data_247.normalize_cardiovascular_age_samples(docs, user_id)
+                )
+            case "vo2_max":
+                return self.data_247.save_vo2_data(db, user_id, docs)
+            case _:
+                return None
