@@ -131,6 +131,9 @@ class OuraWebhookService:
                         json=body,
                         timeout=30.0,
                     )
+                    if response.status_code == 409:
+                        results.append({"data_type": data_type, "event_type": event_type, "status": "skipped"})
+                        continue
                     response.raise_for_status()
                     results.append(
                         {
