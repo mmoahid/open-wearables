@@ -29,22 +29,25 @@ OURA_WEBHOOK_DATA_TYPES = [
     "daily_spo2",
     "daily_cardiovascular_age",
     "vo2_max",
-    # types below for debug
-    "sleep_time",
-    "rest_mode_period",
-    "ring_configuration",
-    "daily_stress",
-    "daily_cycle_phases",
-    "activation_status",
-    "daily_resilience",
-    "period_start",
-    "pregnancy",
-    "fertile_window",
-    "ovulation_confirmed",
-    "blood_glucose",
-    "tag",
-    "enhanced_tag",
-    "session",
+
+    """ not supported yet """
+    # "sleep_time",
+    # "rest_mode_period",
+    # "ring_configuration",
+    # "daily_stress",
+    # "daily_cycle_phases",
+    # "activation_status",
+    # "daily_resilience",
+    # "tag",
+    # "enhanced_tag",
+    # "session",
+    
+    """ possibly not accessible via api - up to verification """
+    # "blood_glucose",
+    # "period_start",
+    # "pregnancy",
+    # "fertile_window",
+    # "ovulation_confirmed",    
 ]
 
 OURA_WEBHOOK_EVENT_TYPES = ["create", "update"]

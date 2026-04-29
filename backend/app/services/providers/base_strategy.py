@@ -65,8 +65,6 @@ class ProviderCapabilities:
     webhook_stream: bool = False
     webhook_ping: bool = False
     webhook_registration_api: bool = False
-    """Provider exposes an API to register/manage webhook subscriptions programmatically.
-    False means subscriptions must be configured manually in the developer portal (e.g. Whoop, Suunto)."""
     max_historical_days: int | None = None
     """Hard limit on how many days of history the provider allows. None = no known limit."""
 
