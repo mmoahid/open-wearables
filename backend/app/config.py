@@ -162,6 +162,10 @@ class Settings(BaseSettings):
 
     # SDK INVITATION CODE SETTINGS
     user_invitation_code_expire_days: int = 7
+    owner_bootstrap_enabled: bool = False
+    owner_bootstrap_user_id: str | None = None
+    owner_bootstrap_token_sha256: SecretStr | None = None
+    owner_bootstrap_app_id: str = "owner-bootstrap:mo-health-sync"
 
     # AWS SETTINGS
     aws_bucket_name: str | None = None
