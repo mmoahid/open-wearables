@@ -95,6 +95,9 @@ def _resolve_auth_token() -> str | None:
 
 def _build_client() -> Svix | None:
     """Create the Svix client. Returns None when no credentials are configured."""
+    if not settings.outgoing_webhooks_enabled:
+        logger.info("Outgoing webhooks are disabled by configuration.")
+        return None
     token = _resolve_auth_token()
     if token is None:
         return None

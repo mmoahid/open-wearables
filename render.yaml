@@ -1,0 +1,177 @@
+previews:
+  generation: off
+
+databases:
+  - name: mo-health-open-wearables-db
+    region: ohio
+    plan: basic-256mb
+    databaseName: open_wearables
+    user: open_wearables
+    ipAllowList: []
+
+services:
+  - type: keyvalue
+    name: mo-health-open-wearables-queue
+    region: ohio
+    plan: starter
+    maxmemoryPolicy: noeviction
+    ipAllowList: []
+
+  - type: web
+    runtime: docker
+    name: mo-health-open-wearables-api
+    region: ohio
+    plan: starter
+    repo: https://github.com/mmoahid/open-wearables
+    branch: main
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    dockerCommand: bash scripts/start/render_app_sync_only.sh
+    healthCheckPath: /openapi.json
+    autoDeployTrigger: off
+    maxShutdownDelaySeconds: 120
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: API_BASE_URL
+        value: https://mo-health-open-wearables-api.onrender.com
+      - key: FRONTEND_URL
+        value: https://mo-health-open-wearables-api.onrender.com
+      - key: CORS_ALLOW_ALL
+        value: "false"
+      - key: CORS_ORIGINS
+        value: "[]"
+      - key: DB_HOST
+        fromDatabase:
+          name: mo-health-open-wearables-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: mo-health-open-wearables-db
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: mo-health-open-wearables-db
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: mo-health-open-wearables-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: mo-health-open-wearables-db
+          property: password
+      - key: REDIS_HOST
+        fromService:
+          type: keyvalue
+          name: mo-health-open-wearables-queue
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          type: keyvalue
+          name: mo-health-open-wearables-queue
+          property: port
+      - key: REDIS_DB
+        value: "0"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_EMAIL
+        value: Mo@zerotoagent.com
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      - key: RAW_PAYLOAD_STORAGE
+        value: disabled
+      - key: OUTGOING_WEBHOOKS_ENABLED
+        value: "false"
+      - key: PHOTO_INTAKE_ENABLED
+        value: "false"
+      - key: WHATSAPP_INTAKE_ENABLED
+        value: "false"
+      - key: VISION_CLASSIFICATION_ENABLED
+        value: "false"
+      - key: CALENDAR_WRITE_ENABLED
+        value: "false"
+      - key: SENTRY_ENABLED
+        value: "false"
+
+  - type: worker
+    runtime: docker
+    name: mo-health-open-wearables-worker
+    region: ohio
+    plan: starter
+    repo: https://github.com/mmoahid/open-wearables
+    branch: main
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    dockerCommand: bash scripts/start/render_worker_sync_only.sh
+    autoDeployTrigger: off
+    maxShutdownDelaySeconds: 300
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: API_BASE_URL
+        value: https://mo-health-open-wearables-api.onrender.com
+      - key: FRONTEND_URL
+        value: https://mo-health-open-wearables-api.onrender.com
+      - key: CORS_ALLOW_ALL
+        value: "false"
+      - key: CORS_ORIGINS
+        value: "[]"
+      - key: DB_HOST
+        fromDatabase:
+          name: mo-health-open-wearables-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: mo-health-open-wearables-db
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: mo-health-open-wearables-db
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: mo-health-open-wearables-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: mo-health-open-wearables-db
+          property: password
+      - key: REDIS_HOST
+        fromService:
+          type: keyvalue
+          name: mo-health-open-wearables-queue
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          type: keyvalue
+          name: mo-health-open-wearables-queue
+          property: port
+      - key: REDIS_DB
+        value: "0"
+      - key: SECRET_KEY
+        fromService:
+          type: web
+          name: mo-health-open-wearables-api
+          envVarKey: SECRET_KEY
+      - key: ADMIN_EMAIL
+        value: Mo@zerotoagent.com
+      - key: ADMIN_PASSWORD
+        fromService:
+          type: web
+          name: mo-health-open-wearables-api
+          envVarKey: ADMIN_PASSWORD
+      - key: RAW_PAYLOAD_STORAGE
+        value: disabled
+      - key: OUTGOING_WEBHOOKS_ENABLED
+        value: "false"
+      - key: PHOTO_INTAKE_ENABLED
+        value: "false"
+      - key: WHATSAPP_INTAKE_ENABLED
+        value: "false"
+      - key: VISION_CLASSIFICATION_ENABLED
+        value: "false"
+      - key: CALENDAR_WRITE_ENABLED
+        value: "false"
+      - key: SENTRY_ENABLED
+        value: "false"

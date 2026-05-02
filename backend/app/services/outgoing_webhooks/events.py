@@ -52,7 +52,7 @@ def _dispatch(
 
         emit_webhook_event.delay(event_type, payload, channels=channels, idempotency_key=idempotency_key)
     except Exception:
-        logger.warning("Could not enqueue webhook event %s", event_type, exc_info=True)
+        logger.debug("Could not enqueue webhook event %s", event_type, exc_info=True)
 
 
 def on_workout_created(

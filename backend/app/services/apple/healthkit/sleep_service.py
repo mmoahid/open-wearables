@@ -319,7 +319,17 @@ def handle_sleep_data(
 
     # Dispatch the stale-sleep task so sessions that have gone quiet (including
     # other users' sessions) are finalised promptly without waiting for the next beat.
-    finalize_stale_sleeps.delay()
+    try:
+        finalize_stale_sleeps.delay()
+    except Exception as e:
+        log_structured(
+            logger,
+            "debug",
+            "Failed to dispatch stale sleep finalizer: %s",
+            provider="apple_healthkit",
+            task="handle_sleep_data",
+            error=str(e),
+        )
 
 
 def _calculate_final_metrics(stages: list[SleepStateStage]) -> tuple[dict, list[SleepStage]]:

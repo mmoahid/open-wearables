@@ -111,7 +111,7 @@ class EventRecordService(
     ) -> EventRecordDetail:
         result = self.event_record_detail_repo.create(db_session, detail, detail_type=detail_type)
         record = db_session.get(EventRecord, detail.record_id)
-        if record is not None and record.data_source_id is not None:
+        if record is not None and record.data_source_id is not None and svix_service.is_enabled():
             data_source = db_session.get(DataSource, record.data_source_id)
             if data_source is not None:
                 _record, _data_source, _detail = record, data_source, detail

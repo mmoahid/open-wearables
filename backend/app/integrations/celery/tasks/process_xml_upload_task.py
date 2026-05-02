@@ -104,6 +104,7 @@ def _import_xml_data(db: Session, xml_path: str, user_id: str) -> XMLParseStats:
                 detail_for_record = detail.model_copy(update={"record_id": created_record.id})
                 event_record_service.create_detail(db, detail_for_record)
             except Exception as e:
+                db.rollback()
                 log_structured(
                     log,
                     "warning",
